@@ -1,5 +1,8 @@
+use crate::freecell;
 use crate::klondike::{Game, ValidationError};
-use serde::{Deserialize, Serialize};
+use crate::replay::Replay;
+use crate::spider;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -19,11 +22,25 @@ struct SaveEnvelope<T> {
 
 #[must_use]
 pub fn default_save_path() -> Option<PathBuf> {
+    default_named_save_path("klondike-save.json")
+}
+
+#[must_use]
+pub fn default_spider_save_path() -> Option<PathBuf> {
+    default_named_save_path("spider-save.json")
+}
+
+#[must_use]
+pub fn default_freecell_save_path() -> Option<PathBuf> {
+    default_named_save_path("freecell-save.json")
+}
+
+fn default_named_save_path(file_name: &str) -> Option<PathBuf> {
     save_root(
         std::env::var_os("XDG_DATA_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
     )
-    .map(|root| root.join("solitaire/klondike-save.json"))
+    .map(|root| root.join("solitaire").join(file_name))
 }
 
 fn save_root(xdg_data_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
@@ -79,6 +96,62 @@ pub fn load_klondike(path: &Path) -> Result<Game, SaveError> {
     };
     game.validate()?;
     Ok(game)
+}
+
+/// Saves a Spider game as a versioned deterministic replay.
+///
+/// # Errors
+/// Returns an I/O or serialization error if the atomic save fails.
+pub fn save_spider(path: &Path, game: &spider::Game) -> Result<(), SaveError> {
+    save_replay(path, "spider", &game.replay())
+}
+
+/// Loads and legally reconstructs a Spider game from its saved replay.
+///
+/// # Errors
+/// Returns a typed error for malformed, unsupported, mismatched, or illegal data.
+pub fn load_spider(path: &Path) -> Result<spider::Game, SaveError> {
+    let replay = load_replay::<Replay<spider::Action, spider::SuitMode>>(path, "spider")?;
+    spider::Game::from_replay(&replay).map_err(|error| SaveError::InvalidReplay(error.to_string()))
+}
+
+/// Saves a `FreeCell` game as a versioned deterministic replay.
+///
+/// # Errors
+/// Returns an I/O or serialization error if the atomic save fails.
+pub fn save_freecell(path: &Path, game: &freecell::Game) -> Result<(), SaveError> {
+    save_replay(path, "freecell", &game.replay())
+}
+
+/// Loads and legally reconstructs a `FreeCell` game from its saved replay.
+///
+/// # Errors
+/// Returns a typed error for malformed, unsupported, mismatched, or illegal data.
+pub fn load_freecell(path: &Path) -> Result<freecell::Game, SaveError> {
+    let replay = load_replay::<Replay<freecell::Action>>(path, "freecell")?;
+    freecell::Game::from_replay(&replay)
+        .map_err(|error| SaveError::InvalidReplay(error.to_string()))
+}
+
+fn save_replay<T: Serialize>(path: &Path, game: &str, replay: &T) -> Result<(), SaveError> {
+    let envelope = SaveEnvelope {
+        version: CURRENT_SAVE_VERSION,
+        game: game.to_owned(),
+        payload: replay,
+    };
+    atomic_write(path, &serde_json::to_vec(&envelope)?)?;
+    Ok(())
+}
+
+fn load_replay<T: DeserializeOwned>(path: &Path, expected_game: &str) -> Result<T, SaveError> {
+    let envelope: SaveEnvelope<T> = serde_json::from_slice(&fs::read(path)?)?;
+    if envelope.version != CURRENT_SAVE_VERSION {
+        return Err(SaveError::UnsupportedVersion(envelope.version));
+    }
+    if envelope.game != expected_game {
+        return Err(SaveError::WrongGame(envelope.game));
+    }
+    Ok(envelope.payload)
 }
 
 /// Renames an unreadable save beside the original path for later inspection.
@@ -189,6 +262,7 @@ pub enum SaveError {
     UnsupportedVersion(u16),
     WrongGame(String),
     InvalidState(ValidationError),
+    InvalidReplay(String),
 }
 
 impl From<io::Error> for SaveError {
@@ -212,8 +286,9 @@ impl std::fmt::Display for SaveError {
             Self::Io(error) => write!(f, "save I/O failed: {error}"),
             Self::Json(error) => write!(f, "save data is malformed: {error}"),
             Self::UnsupportedVersion(version) => write!(f, "save version {version} is unsupported"),
-            Self::WrongGame(game) => write!(f, "save contains {game}, not Klondike"),
+            Self::WrongGame(game) => write!(f, "save contains unexpected game {game}"),
             Self::InvalidState(error) => error.fmt(f),
+            Self::InvalidReplay(error) => write!(f, "saved replay is invalid: {error}"),
         }
     }
 }
@@ -222,7 +297,9 @@ impl std::error::Error for SaveError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::freecell::{Action as FreeCellAction, Pile as FreeCellPile};
     use crate::klondike::Options;
+    use crate::spider::SuitMode;
 
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("solitaire-save-test-{}-{name}", std::process::id()))
@@ -235,6 +312,70 @@ mod tests {
         save_klondike(&path, &game).unwrap();
         assert_eq!(load_klondike(&path).unwrap(), game);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn spider_and_freecell_replay_saves_round_trip() {
+        let spider_path = test_path("spider.json");
+        let mut spider = spider::Game::new(19, SuitMode::Two);
+        spider.apply(spider::Action::DealRow).unwrap();
+        save_spider(&spider_path, &spider).unwrap();
+        assert_eq!(load_spider(&spider_path).unwrap().state, spider.state);
+        fs::remove_file(spider_path).unwrap();
+
+        let freecell_path = test_path("freecell.json");
+        let mut freecell = freecell::Game::new(27);
+        freecell
+            .apply(FreeCellAction {
+                from: FreeCellPile::Cascade(0),
+                to: FreeCellPile::FreeCell(0),
+                count: 1,
+            })
+            .unwrap();
+        save_freecell(&freecell_path, &freecell).unwrap();
+        assert_eq!(load_freecell(&freecell_path).unwrap().state, freecell.state);
+        fs::remove_file(freecell_path).unwrap();
+    }
+
+    #[test]
+    fn illegal_spider_and_freecell_saved_replays_are_rejected() {
+        let spider_path = test_path("spider-illegal.json");
+        let replay = Replay {
+            version: crate::replay::CURRENT_REPLAY_VERSION,
+            game: "spider".into(),
+            seed: 1,
+            setup: SuitMode::One,
+            actions: vec![spider::Action::Move {
+                from: 0,
+                to: 0,
+                count: 1,
+            }],
+        };
+        save_replay(&spider_path, "spider", &replay).unwrap();
+        assert!(matches!(
+            load_spider(&spider_path),
+            Err(SaveError::InvalidReplay(_))
+        ));
+        fs::remove_file(spider_path).unwrap();
+
+        let freecell_path = test_path("freecell-illegal.json");
+        let replay = Replay {
+            version: crate::replay::CURRENT_REPLAY_VERSION,
+            game: "freecell".into(),
+            seed: 1,
+            setup: (),
+            actions: vec![FreeCellAction {
+                from: FreeCellPile::Cascade(0),
+                to: FreeCellPile::Cascade(0),
+                count: 1,
+            }],
+        };
+        save_replay(&freecell_path, "freecell", &replay).unwrap();
+        assert!(matches!(
+            load_freecell(&freecell_path),
+            Err(SaveError::InvalidReplay(_))
+        ));
+        fs::remove_file(freecell_path).unwrap();
     }
 
     #[test]
