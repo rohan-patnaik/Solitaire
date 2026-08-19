@@ -157,13 +157,31 @@ impl State {
         }
         for column in &self.tableau {
             let mut saw_face_up = false;
+            let mut previous_face_up: Option<Card> = None;
             for entry in column {
                 if entry.face_up {
                     saw_face_up = true;
+                    if let Some(previous) = previous_face_up
+                        && (previous.color() == entry.card.color()
+                            || previous.rank.value() != entry.card.rank.value() + 1)
+                    {
+                        return Err(ValidationError::InvalidTableauRun);
+                    }
+                    previous_face_up = Some(entry.card);
                 } else if saw_face_up {
                     return Err(ValidationError::FaceDownAboveFaceUp);
                 }
             }
+            if column.last().is_some_and(|entry| !entry.face_up) {
+                return Err(ValidationError::NoExposedTableauCard);
+            }
+        }
+        if self
+            .options
+            .max_redeals
+            .is_some_and(|maximum| self.redeals > maximum)
+        {
+            return Err(ValidationError::RedealCounterExceedsLimit);
         }
         for (index, foundation) in self.foundations.iter().enumerate() {
             for (rank_index, card) in foundation.iter().enumerate() {
@@ -333,8 +351,35 @@ impl Game {
     /// Returns [`ValidationError`] when any serialized state violates invariants.
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.state.validate()?;
+        if self.undo.len() != self.actions.len() {
+            return Err(ValidationError::UndoActionCardinality);
+        }
+        if self.redo.len() != self.redo_actions.len() {
+            return Err(ValidationError::RedoActionCardinality);
+        }
         for state in self.undo.iter().chain(&self.redo) {
             state.validate()?;
+        }
+        let mut cursor = Self::new(self.state.seed, self.state.options);
+        for (action, expected_before) in self.actions.iter().zip(&self.undo) {
+            if !states_equivalent(&cursor.state, expected_before) {
+                return Err(ValidationError::InvalidUndoTransition);
+            }
+            cursor
+                .apply_to_state(action)
+                .map_err(|_| ValidationError::IllegalHistoryAction)?;
+        }
+        if !states_equivalent(&cursor.state, &self.state) {
+            return Err(ValidationError::CurrentStateDoesNotMatchActions);
+        }
+        cursor.state = self.state.clone();
+        for (action, expected_after) in self.redo_actions.iter().rev().zip(self.redo.iter().rev()) {
+            cursor
+                .apply_to_state(action)
+                .map_err(|_| ValidationError::IllegalHistoryAction)?;
+            if !states_equivalent(&cursor.state, expected_after) {
+                return Err(ValidationError::InvalidRedoTransition);
+            }
         }
         Ok(())
     }
@@ -634,6 +679,14 @@ fn valid_tableau_run(cards: &[Card]) -> bool {
     })
 }
 
+fn states_equivalent(first: &State, second: &State) -> bool {
+    let mut first = first.clone();
+    let mut second = second.clone();
+    first.elapsed_seconds = 0;
+    second.elapsed_seconds = 0;
+    first == second
+}
+
 const fn suit_index(suit: Suit) -> usize {
     match suit {
         Suit::Clubs => 0,
@@ -677,7 +730,16 @@ pub enum ValidationError {
     CardCount(usize),
     DuplicateCard,
     FaceDownAboveFaceUp,
+    NoExposedTableauCard,
+    InvalidTableauRun,
     FoundationOrder,
+    RedealCounterExceedsLimit,
+    UndoActionCardinality,
+    RedoActionCardinality,
+    InvalidUndoTransition,
+    InvalidRedoTransition,
+    IllegalHistoryAction,
+    CurrentStateDoesNotMatchActions,
 }
 
 impl std::fmt::Display for ValidationError {
@@ -960,6 +1022,37 @@ mod tests {
         assert_eq!(
             malformed.validate(),
             Err(ValidationError::FaceDownAboveFaceUp)
+        );
+    }
+
+    #[test]
+    fn validation_rejects_rule_and_history_corruption() {
+        let mut redeals = Game::new(
+            9,
+            Options {
+                max_redeals: Some(1),
+                ..Options::default()
+            },
+        );
+        redeals.state.redeals = 2;
+        assert_eq!(
+            redeals.validate(),
+            Err(ValidationError::RedealCounterExceedsLimit)
+        );
+
+        let mut history = Game::new(10, Options::default());
+        history.apply(Action::Draw).unwrap();
+        history.actions.clear();
+        assert_eq!(
+            history.validate(),
+            Err(ValidationError::UndoActionCardinality)
+        );
+
+        let mut tableau = Game::new(11, Options::default());
+        tableau.state.tableau[1][0].face_up = true;
+        assert_eq!(
+            tableau.state.validate(),
+            Err(ValidationError::InvalidTableauRun)
         );
     }
 }

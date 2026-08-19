@@ -190,6 +190,27 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_history_snapshot_fixture_is_rejected() {
+        use crate::klondike::Action;
+
+        let path = test_path("history-corrupt.json");
+        let mut game = Game::new(777, Options::default());
+        game.apply(Action::Draw).unwrap();
+        save_klondike(&path, &game).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["payload"]["actions"] = serde_json::json!([]);
+        atomic_write(&path, &serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(matches!(
+            load_klondike(&path),
+            Err(SaveError::InvalidState(
+                ValidationError::UndoActionCardinality
+            ))
+        ));
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn xdg_root_requires_nonempty_absolute_path() {
         let home = OsStr::new("/home/player");
         assert_eq!(
