@@ -151,6 +151,9 @@ impl Game {
     /// # Errors
     /// Returns an error for a wrong game identifier or illegal action.
     pub fn from_replay(replay: &Replay<Action, Options>) -> Result<Self, MoveError> {
+        replay
+            .validate_version()
+            .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
         if replay.game != "pyramid" {
             return Err(MoveError::WrongGame);
         }
@@ -252,6 +255,7 @@ pub enum MoveError {
     SameCard,
     NotThirteen,
     WrongGame,
+    UnsupportedReplayVersion(u16),
 }
 
 impl std::fmt::Display for MoveError {
@@ -324,5 +328,15 @@ mod tests {
             game.apply(Action::Draw).unwrap();
         }
         assert_eq!(game.apply(Action::Recycle), Err(MoveError::RedealLimit));
+    }
+
+    #[test]
+    fn typed_replay_with_wrong_version_is_rejected() {
+        let mut replay = Game::new(1, Options::default()).replay();
+        replay.version = 1;
+        assert_eq!(
+            Game::from_replay(&replay),
+            Err(MoveError::UnsupportedReplayVersion(1))
+        );
     }
 }

@@ -149,6 +149,9 @@ impl Game {
     ///
     /// Returns an error for the wrong game identifier or an illegal action.
     pub fn from_replay(replay: &Replay<Action, SuitMode>) -> Result<Self, MoveError> {
+        replay
+            .validate_version()
+            .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
         if replay.game != "spider" {
             return Err(MoveError::WrongGame);
         }
@@ -323,6 +326,7 @@ pub enum MoveError {
     BrokenRun,
     InvalidDestination,
     WrongGame,
+    UnsupportedReplayVersion(u16),
 }
 
 impl std::fmt::Display for MoveError {
@@ -464,6 +468,16 @@ mod tests {
         assert_eq!(
             Game::from_replay(&replay).unwrap().state.mode,
             SuitMode::Two
+        );
+    }
+
+    #[test]
+    fn typed_replay_with_wrong_version_is_rejected() {
+        let mut replay = Game::new(1, SuitMode::Four).replay();
+        replay.version = 99;
+        assert_eq!(
+            Game::from_replay(&replay),
+            Err(MoveError::UnsupportedReplayVersion(99))
         );
     }
 }

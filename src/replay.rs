@@ -27,6 +27,14 @@ impl<A, S> Replay<A, S> {
     pub fn push(&mut self, action: A) {
         self.actions.push(action);
     }
+
+    /// Rejects typed replay values that bypassed JSON construction.
+    ///
+    /// # Errors
+    /// Returns [`ReplayError::UnsupportedVersion`] for any non-current version.
+    pub fn validate_version(&self) -> Result<(), ReplayError> {
+        validate_version(self.version)
+    }
 }
 
 impl<A: Serialize, S: Serialize> Replay<A, S> {
@@ -47,11 +55,26 @@ impl<A: DeserializeOwned, S: DeserializeOwned> Replay<A, S> {
     ///
     /// Returns an error for malformed JSON or an unsupported version.
     pub fn from_json(json: &str) -> Result<Self, ReplayError> {
-        let replay: Self = serde_json::from_str(json)?;
-        if replay.version != CURRENT_REPLAY_VERSION {
-            return Err(ReplayError::UnsupportedVersion(replay.version));
+        #[derive(Deserialize)]
+        struct Header {
+            version: u16,
         }
+        let header: Header = serde_json::from_str(json)?;
+        validate_version(header.version)?;
+        let replay: Self = serde_json::from_str(json)?;
         Ok(replay)
+    }
+}
+
+/// Validates a replay format version without parsing its version-specific body.
+///
+/// # Errors
+/// Returns [`ReplayError::UnsupportedVersion`] for any non-current version.
+pub fn validate_version(version: u16) -> Result<(), ReplayError> {
+    if version == CURRENT_REPLAY_VERSION {
+        Ok(())
+    } else {
+        Err(ReplayError::UnsupportedVersion(version))
     }
 }
 
@@ -102,5 +125,12 @@ mod tests {
         let json = r#"{"version":99,"game":"klondike","seed":7,"setup":null,"actions":[]}"#;
         let error = Replay::<Action>::from_json(json).unwrap_err();
         assert!(matches!(error, ReplayError::UnsupportedVersion(99)));
+    }
+
+    #[test]
+    fn legacy_shape_is_classified_by_version_before_v2_fields() {
+        let json = r#"{"version":1,"game":"klondike","seed":7,"actions":[]}"#;
+        let error = Replay::<Action, String>::from_json(json).unwrap_err();
+        assert!(matches!(error, ReplayError::UnsupportedVersion(1)));
     }
 }

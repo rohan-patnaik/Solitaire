@@ -131,6 +131,9 @@ impl Game {
     ///
     /// Returns an error for the wrong game identifier or an illegal action.
     pub fn from_replay(replay: &Replay<Action>) -> Result<Self, MoveError> {
+        replay
+            .validate_version()
+            .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
         if replay.game != "freecell" {
             return Err(MoveError::WrongGame);
         }
@@ -341,6 +344,7 @@ pub enum MoveError {
     OccupiedFreeCell,
     InvalidFoundation,
     WrongGame,
+    UnsupportedReplayVersion(u16),
 }
 
 impl std::fmt::Display for MoveError {
@@ -496,5 +500,15 @@ mod tests {
         assert_eq!(Game::from_replay(&replay).unwrap().state, game.state);
         assert!(game.undo());
         assert_eq!(game.state, before);
+    }
+
+    #[test]
+    fn typed_replay_with_wrong_version_is_rejected() {
+        let mut replay = Game::new(1).replay();
+        replay.version = 1;
+        assert_eq!(
+            Game::from_replay(&replay),
+            Err(MoveError::UnsupportedReplayVersion(1))
+        );
     }
 }

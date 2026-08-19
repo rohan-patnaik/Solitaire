@@ -295,6 +295,9 @@ impl Game {
     /// Returns an error if the replay identifies another game or contains an
     /// action that is illegal for the recorded options.
     pub fn from_replay(replay: &Replay<Action, ReplaySetup>) -> Result<Self, MoveError> {
+        replay
+            .validate_version()
+            .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
         if replay.game != "klondike" {
             return Err(MoveError::WrongGame);
         }
@@ -658,6 +661,7 @@ pub enum MoveError {
     InvalidTableau,
     InvalidColumn,
     WrongGame,
+    UnsupportedReplayVersion(u16),
 }
 
 impl std::fmt::Display for MoveError {
@@ -865,6 +869,17 @@ mod tests {
         let rebuilt = Game::from_replay(&game.replay()).unwrap();
         assert_eq!(rebuilt.state, game.state);
         assert_eq!(rebuilt.state.options, options);
+    }
+
+    #[test]
+    fn typed_replay_with_wrong_version_is_rejected() {
+        let game = Game::new(1, Options::default());
+        let mut replay = game.replay();
+        replay.version = 1;
+        assert_eq!(
+            Game::from_replay(&replay),
+            Err(MoveError::UnsupportedReplayVersion(1))
+        );
     }
 
     #[test]
