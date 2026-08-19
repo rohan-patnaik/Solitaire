@@ -144,10 +144,16 @@ fn save_replay<T: Serialize>(path: &Path, game: &str, replay: &T) -> Result<(), 
 }
 
 fn load_replay<T: DeserializeOwned>(path: &Path, expected_game: &str) -> Result<T, SaveError> {
-    let envelope: SaveEnvelope<T> = serde_json::from_slice(&fs::read(path)?)?;
-    if envelope.version != CURRENT_SAVE_VERSION {
-        return Err(SaveError::UnsupportedVersion(envelope.version));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+    let version = value
+        .get("version")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|version| u16::try_from(version).ok())
+        .ok_or_else(|| serde_json::Error::io(io::Error::other("invalid save version")))?;
+    if version != CURRENT_SAVE_VERSION {
+        return Err(SaveError::UnsupportedVersion(version));
     }
+    let envelope: SaveEnvelope<T> = serde_json::from_value(value)?;
     if envelope.game != expected_game {
         return Err(SaveError::WrongGame(envelope.game));
     }
@@ -376,6 +382,17 @@ mod tests {
             Err(SaveError::InvalidReplay(_))
         ));
         fs::remove_file(freecell_path).unwrap();
+    }
+
+    #[test]
+    fn future_replay_save_is_classified_before_its_payload() {
+        let path = test_path("spider-future.json");
+        atomic_write(&path, br#"{"version":99,"game":"spider","payload":{}}"#).unwrap();
+        assert!(matches!(
+            load_spider(&path),
+            Err(SaveError::UnsupportedVersion(99))
+        ));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
