@@ -37,3 +37,21 @@ fn card_keyboard_controls_ignore_repeat_and_show_focus() {
     assert!(ui.contains("card-focus.has-focus ? #ffffff"));
     assert!(ui.contains("slot-focus.has-focus ? #ffffff"));
 }
+
+#[test]
+fn spider_and_freecell_surfaces_are_accessible_and_interactive() {
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "callback spider-deal-stock",
+        "callback spider-tableau-activated",
+        "callback freecell-cascade-activated",
+        "callback freecell-cell-activated",
+        "callback freecell-foundation-activated",
+        "accessible-label: \"Game picker\"",
+        "accessible-live-region: polite",
+    ] {
+        assert!(ui.contains(contract), "missing UI contract: {contract}");
+    }
+    assert!(ui.contains("model: [\"1 suit\", \"2 suits\", \"4 suits\"]"));
+    assert!(ui.contains("Open free cell"));
+}

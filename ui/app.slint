@@ -105,27 +105,39 @@ component EmptySlot inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    title: "Solitaire — Klondike";
+    title: "Solitaire — " + root.game-kind;
     width: 1180px;
     height: 820px;
     background: #123e38;
 
+    in property <string> game-kind: "Klondike";
     in property <[UiColumn]> columns;
     in property <[UiCard]> foundations;
+    in property <[UiCard]> free-cells;
+    in property <[bool]> free-cell-occupied;
     in property <UiCard> waste-card;
     in property <bool> has-waste;
     in property <int> stock-count;
     in property <int> score;
     in property <int> moves;
+    in property <int> completed-runs;
+    in property <int> longest-column;
+    in property <int> deal-id;
     in property <string> status-text: "Ready";
     in property <bool> can-undo;
     in property <bool> can-redo;
 
+    callback select-game(string);
     callback new-game(string);
     callback draw-stock;
     callback waste-activated;
     callback tableau-activated(int, int);
     callback foundation-activated(int);
+    callback spider-deal-stock;
+    callback spider-tableau-activated(int, int);
+    callback freecell-cascade-activated(int, int);
+    callback freecell-cell-activated(int);
+    callback freecell-foundation-activated(int);
     callback undo-requested;
     callback redo-requested;
     callback hint-requested;
@@ -137,7 +149,7 @@ export component AppWindow inherits Window {
         spacing: 16px;
 
         HorizontalBox {
-            spacing: 12px;
+            spacing: 10px;
             Text {
                 text: "Solitaire";
                 color: #fff3dd;
@@ -145,22 +157,57 @@ export component AppWindow inherits Window {
                 font-weight: 700;
                 vertical-alignment: center;
             }
+            game-picker := ComboBox {
+                model: ["Klondike", "Spider", "FreeCell"];
+                current-value: root.game-kind;
+                accessible-label: "Game picker";
+            }
+            Button {
+                text: "Open";
+                accessible-label: "Open selected game";
+                clicked => { root.select-game(game-picker.current-value); }
+            }
             Rectangle { horizontal-stretch: 1; }
             Text {
-                text: "Score  " + root.score + "     Moves  " + root.moves;
+                text: root.game-kind == "Spider"
+                    ? "Score  " + root.score + "     Moves  " + root.moves + "     Runs  " + root.completed-runs + "/8"
+                    : (root.game-kind == "FreeCell"
+                        ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-id
+                        : "Score  " + root.score + "     Moves  " + root.moves);
                 color: #dce9e3;
                 font-size: 17px;
                 vertical-alignment: center;
             }
-            draw-mode := ComboBox {
-                model: ["Draw 1", "Draw 3"];
-                current-value: "Draw 1";
-                accessible-label: "Draw mode for a new game";
+            if root.game-kind == "Klondike": HorizontalBox {
+                spacing: 8px;
+                draw-mode := ComboBox {
+                    model: ["Draw 1", "Draw 3"];
+                    current-value: "Draw 1";
+                    accessible-label: "Draw mode for a new Klondike deal";
+                }
+                Button {
+                    text: "New deal";
+                    accessible-label: "Start a new Klondike deal";
+                    clicked => { root.new-game(draw-mode.current-value); }
+                }
             }
-            Button {
+            if root.game-kind == "Spider": HorizontalBox {
+                spacing: 8px;
+                spider-mode := ComboBox {
+                    model: ["1 suit", "2 suits", "4 suits"];
+                    current-value: "1 suit";
+                    accessible-label: "Suit count for a new Spider deal";
+                }
+                Button {
+                    text: "New deal";
+                    accessible-label: "Start a new Spider deal";
+                    clicked => { root.new-game(spider-mode.current-value); }
+                }
+            }
+            if root.game-kind == "FreeCell": Button {
                 text: "New deal";
-                accessible-label: "Start a new Klondike deal";
-                clicked => { root.new-game(draw-mode.current-value); }
+                accessible-label: "Start the next numbered FreeCell deal";
+                clicked => { root.new-game("Next numbered deal"); }
             }
         }
 
@@ -169,11 +216,15 @@ export component AppWindow inherits Window {
             Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
             Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
-            Button { text: "Finish safe moves"; clicked => { root.autocomplete-requested(); } }
+            if root.game-kind == "Klondike": Button {
+                text: "Finish safe moves";
+                clicked => { root.autocomplete-requested(); }
+            }
             Rectangle { horizontal-stretch: 1; }
             Text {
                 text: root.status-text;
                 accessible-live-region: polite;
+                accessible-label: "Game status: " + root.status-text;
                 color: #f4d78e;
                 font-size: 16px;
                 vertical-alignment: center;
@@ -181,7 +232,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        Rectangle {
+        if root.game-kind == "Klondike": Rectangle {
             background: #0d332e;
             border-radius: 18px;
             vertical-stretch: 1;
@@ -191,12 +242,10 @@ export component AppWindow inherits Window {
                 y: 22px;
                 width: parent.width - 48px;
                 height: 150px;
-
                 EmptySlot {
                     label: root.stock-count > 0 ? root.stock-count + " cards\nDraw" : "Recycle";
                     activated => { root.draw-stock(); }
                 }
-
                 if root.has-waste: CardFace {
                     x: 126px;
                     card: root.waste-card;
@@ -207,30 +256,25 @@ export component AppWindow inherits Window {
                     label: "Waste";
                     activated => { root.waste-activated(); }
                 }
-
                 for foundation[index] in root.foundations: CardFace {
                     x: parent.width - (4 - index) * 116px;
                     card: foundation;
                     activated => { root.foundation-activated(index); }
                 }
             }
-
             Rectangle {
                 x: 24px;
                 y: 188px;
                 width: parent.width - 48px;
                 height: parent.height - 206px;
-
                 for column[column-index] in root.columns: Rectangle {
                     x: column-index * (parent.width - 104px) / 6;
                     width: 104px;
                     height: parent.height;
-
                     if column.cards.length == 0: EmptySlot {
                         label: "Empty column\nKings only";
                         activated => { root.tableau-activated(column-index, 0); }
                     }
-
                     for card[card-index] in column.cards: CardFace {
                         y: card-index * root.fan-spacing(column.cards.length, parent.height / 1px) * 1px;
                         card: card;
@@ -240,8 +284,101 @@ export component AppWindow inherits Window {
             }
         }
 
+        if root.game-kind == "Spider": Rectangle {
+            background: #0d332e;
+            border-radius: 18px;
+            vertical-stretch: 1;
+            EmptySlot {
+                x: 24px;
+                y: 22px;
+                label: root.stock-count > 0 ? root.stock-count + " cards\nDeal row" : "Stock empty";
+                activated => { root.spider-deal-stock(); }
+            }
+            Text {
+                x: 150px;
+                y: 62px;
+                text: "Completed suited runs  " + root.completed-runs + " of 8";
+                color: #dce9e3;
+                font-size: 18px;
+            }
+            Rectangle {
+                x: 24px;
+                y: 184px;
+                width: parent.width - 48px;
+                height: parent.height - 202px;
+                for column[column-index] in root.columns: Rectangle {
+                    x: column-index * (parent.width - 104px) / 9;
+                    width: 104px;
+                    height: parent.height;
+                    if column.cards.length == 0: EmptySlot {
+                        label: "Empty Spider column";
+                        activated => { root.spider-tableau-activated(column-index, 0); }
+                    }
+                    for card[card-index] in column.cards: CardFace {
+                        y: card-index * root.fan-spacing(column.cards.length, parent.height / 1px) * 1px;
+                        card: card;
+                        activated => { root.spider-tableau-activated(column-index, card-index); }
+                    }
+                }
+            }
+        }
+
+        if root.game-kind == "FreeCell": Rectangle {
+            background: #0d332e;
+            border-radius: 18px;
+            vertical-stretch: 1;
+            Rectangle {
+                x: 24px;
+                y: 22px;
+                width: parent.width - 48px;
+                height: 150px;
+                for card[index] in root.free-cells: Rectangle {
+                    x: index * 116px;
+                    width: 104px;
+                    height: 142px;
+                    if root.free-cell-occupied[index]: CardFace {
+                        card: card;
+                        activated => { root.freecell-cell-activated(index); }
+                    }
+                    if !root.free-cell-occupied[index]: EmptySlot {
+                        label: "Open free cell " + (index + 1);
+                        activated => { root.freecell-cell-activated(index); }
+                    }
+                }
+                for foundation[index] in root.foundations: CardFace {
+                    x: parent.width - (4 - index) * 116px;
+                    card: foundation;
+                    activated => { root.freecell-foundation-activated(index); }
+                }
+            }
+            Rectangle {
+                x: 24px;
+                y: 188px;
+                width: parent.width - 48px;
+                height: parent.height - 206px;
+                for column[column-index] in root.columns: Rectangle {
+                    x: column-index * (parent.width - 104px) / 7;
+                    width: 104px;
+                    height: parent.height;
+                    if column.cards.length == 0: EmptySlot {
+                        label: "Empty cascade";
+                        activated => { root.freecell-cascade-activated(column-index, 0); }
+                    }
+                    for card[card-index] in column.cards: CardFace {
+                        y: card-index * root.fan-spacing(column.cards.length, parent.height / 1px) * 1px;
+                        card: card;
+                        activated => { root.freecell-cascade-activated(column-index, card-index); }
+                    }
+                }
+            }
+        }
+
         Text {
-            text: "Choose a face-up card or run, then choose its destination. All play stays on this device.";
+            text: root.game-kind == "Spider"
+                ? "Move descending same-suit runs. Build by rank; complete King-to-Ace suited runs."
+                : (root.game-kind == "FreeCell"
+                    ? "Use four free cells to build alternating cascades and ascending suit foundations."
+                    : "Choose a face-up card or run, then choose its destination. All play stays on this device.");
             color: #aac5bd;
             font-size: 14px;
             horizontal-alignment: center;

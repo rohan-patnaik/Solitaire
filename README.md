@@ -11,7 +11,9 @@ The repository contains:
 
 ## Status
 
-M0 foundation and the playable Klondike vertical slice are implemented. Renderer-independent, deterministic, serializable rules engines are also complete for Spider (one/two/four suit), FreeCell, Pyramid, and TriPeaks. Their Slint play surfaces and the collection layer remain tracked in [ROADMAP.md](ROADMAP.md).
+M0 foundation and playable Slint surfaces for Klondike, Spider, and FreeCell are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell exposes deterministic numbered deals. Both surfaces route all pile interactions through their renderer-independent engines and include undo, redo, hints, replay-backed save/resume, adaptive columns, keyboard activation, accessible labels, and live status text.
+
+Pyramid and TriPeaks currently remain engine-only. Their Slint play surfaces, the broader collection layer, and final real-Omarchy acceptance remain tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Build
 
@@ -32,6 +34,14 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Choose draw one or draw three before starting a new deal.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
+
+## Spider and FreeCell controls
+
+- Choose a game from the picker and select the Spider suit count before starting a new deal.
+- In Spider, select a face-up card or same-suit run, then choose another column. Use the stock control to deal a row; every column must be occupied.
+- In FreeCell, select a card or alternating run, then choose a cascade, free cell, or suit foundation. Movable run size is derived from the available free cells and empty cascades.
+- Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
+- Cards and empty destinations accept pointer activation, assistive-technology default actions, and Tab plus Space/Enter keyboard activation.
 
 ## Omarchy plugin
 

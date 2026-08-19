@@ -16,6 +16,14 @@ Functional parity is achievable for the five core games and common collection fe
 
 ## Milestones
 
+### Current implementation evidence
+
+- M0 foundation is implemented and covered by CI, exact-revision Arch packaging checks, provenance records, and launcher contract tests.
+- Klondike has a playable vertical slice, but the remaining M1 product workflows below are not yet complete.
+- Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Real Omarchy visual and assistive-technology acceptance is still pending.
+- Pyramid and TriPeaks remain engine-only and must not be presented as playable collection entries yet.
+- The collection layer and release-quality work remain open.
+
 ### M0 — foundation
 
 - Native app shell, theme tokens, settings model, CI, packaging skeleton.
@@ -33,6 +41,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Spider one/two/four-suit variants, legal run rules, stock constraints, scoring.
 - FreeCell legal supermoves derived from empty cells/cascades, deal numbers, solver-assisted hints.
 - Extensive property tests for move legality and state conservation.
+- Playable Slint surfaces with pointer and keyboard pile interaction, variants, scoring display, undo/redo, hints, win/no-move status, and replay-backed save/resume are implemented; real-platform acceptance and deeper property coverage remain open.
 
 ### M3 — Pyramid and TriPeaks
 
