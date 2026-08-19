@@ -11,7 +11,7 @@ The repository contains:
 
 ## Status
 
-Foundation build. The native shell currently opens the original home screen and game selector. See [ROADMAP.md](ROADMAP.md).
+M0 foundation and the playable Klondike vertical slice are implemented. Klondike supports deterministic draw-one/draw-three deals, standard and Vegas rules in the domain layer, legal move validation, undo/redo, hints, safe-foundation completion, and automatic local resume. The remaining four games and collection layer are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Build
 
@@ -20,6 +20,17 @@ Install the Rust toolchain and native Slint prerequisites, then:
 ```sh
 cargo run
 ```
+
+On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, and `libxkbcommon`.
+
+## Klondike controls
+
+- Select a face-up card or complete run, then select a tableau column or foundation.
+- Select the stock to draw or recycle the waste.
+- Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
+- Choose draw one or draw three before starting a new deal.
+
+Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
 
 ## Omarchy plugin
 

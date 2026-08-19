@@ -1,46 +1,224 @@
-import { Button, ComboBox, VerticalBox } from "std-widgets.slint";
+import { Button, ComboBox, HorizontalBox, VerticalBox } from "std-widgets.slint";
 
-export component AppWindow inherits Window {
-    title: "Solitaire";
-    width: 1100px;
-    height: 720px;
-    background: #143d35;
+export struct UiCard {
+    label: string,
+    red: bool,
+    face-up: bool,
+    selected: bool,
+    accessible-label: string,
+}
 
-    VerticalBox {
-        padding: 32px;
-        spacing: 18px;
+export struct UiColumn { cards: [UiCard] }
 
-        Text {
-            text: "Solitaire";
-            color: #f5ead7;
-            font-size: 42px;
-            font-weight: 700;
-        }
+component CardFace inherits Rectangle {
+    in property <UiCard> card;
+    callback activated;
 
-        Text {
-            text: "Five classic patience games. Original art. No accounts, ads, or tracking.";
-            color: #d8d3c7;
-            font-size: 18px;
-        }
+    width: 104px;
+    height: 142px;
+    border-radius: 9px;
+    border-width: card.selected ? 4px : 2px;
+    border-color: card.selected ? #f4c95d : (card.face-up ? #d5cbb7 : #8bc2b3);
+    background: card.face-up ? #fffaf0 : #1f6b61;
+    accessible-role: button;
+    accessible-label: card.accessible-label;
 
-        ComboBox {
-            model: ["Klondike", "Spider", "FreeCell", "Pyramid", "TriPeaks"];
-            current-value: "Klondike";
-        }
-
-        Button { text: "New game"; }
+    if !card.face-up: Rectangle {
+        x: 9px;
+        y: 9px;
+        width: parent.width - 18px;
+        height: parent.height - 18px;
+        border-radius: 5px;
+        border-width: 2px;
+        border-color: #a7d4c5;
+        background: #24554f;
 
         Rectangle {
-            background: #0f302a;
-            border-radius: 16px;
+            x: 14px;
+            y: 14px;
+            width: parent.width - 28px;
+            height: parent.height - 28px;
+            border-radius: 28px;
+            border-width: 3px;
+            border-color: #d0a955;
+            background: #2c665d;
+        }
+    }
 
+    if card.face-up: Text {
+        x: 11px;
+        y: 7px;
+        text: card.label;
+        color: card.red ? #a62d3c : #172b2a;
+        font-size: 26px;
+        font-weight: 700;
+    }
+
+    TouchArea { clicked => { root.activated(); } }
+}
+
+component EmptySlot inherits Rectangle {
+    in property <string> label;
+    callback activated;
+    width: 104px;
+    height: 142px;
+    border-radius: 9px;
+    border-width: 2px;
+    border-color: #80a49b;
+    background: #ffffff0d;
+    accessible-role: button;
+    accessible-label: label;
+
+    Text {
+        text: parent.label;
+        color: #b9cec7;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    TouchArea { clicked => { root.activated(); } }
+}
+
+export component AppWindow inherits Window {
+    title: "Solitaire — Klondike";
+    width: 1180px;
+    height: 820px;
+    background: #123e38;
+
+    in property <[UiColumn]> columns;
+    in property <[UiCard]> foundations;
+    in property <UiCard> waste-card;
+    in property <bool> has-waste;
+    in property <int> stock-count;
+    in property <int> score;
+    in property <int> moves;
+    in property <string> status-text: "Ready";
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+
+    callback new-game(string);
+    callback draw-stock;
+    callback waste-activated;
+    callback tableau-activated(int, int);
+    callback foundation-activated(int);
+    callback undo-requested;
+    callback redo-requested;
+    callback hint-requested;
+    callback autocomplete-requested;
+
+    VerticalBox {
+        padding: 22px;
+        spacing: 16px;
+
+        HorizontalBox {
+            spacing: 12px;
             Text {
-                text: "Playable game table lands in milestone M1";
-                color: #f5ead7;
-                horizontal-alignment: center;
+                text: "Solitaire";
+                color: #fff3dd;
+                font-size: 34px;
+                font-weight: 700;
                 vertical-alignment: center;
             }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: "Score  " + root.score + "     Moves  " + root.moves;
+                color: #dce9e3;
+                font-size: 17px;
+                vertical-alignment: center;
+            }
+            draw-mode := ComboBox {
+                model: ["Draw 1", "Draw 3"];
+                current-value: "Draw 1";
+                accessible-label: "Draw mode for a new game";
+            }
+            Button {
+                text: "New deal";
+                accessible-label: "Start a new Klondike deal";
+                clicked => { root.new-game(draw-mode.current-value); }
+            }
+        }
+
+        HorizontalBox {
+            spacing: 10px;
+            Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
+            Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
+            Button { text: "Hint"; clicked => { root.hint-requested(); } }
+            Button { text: "Finish safe moves"; clicked => { root.autocomplete-requested(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.status-text;
+                color: #f4d78e;
+                font-size: 16px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+        }
+
+        Rectangle {
+            background: #0d332e;
+            border-radius: 18px;
+            vertical-stretch: 1;
+
+            Rectangle {
+                x: 24px;
+                y: 22px;
+                width: parent.width - 48px;
+                height: 150px;
+
+                EmptySlot {
+                    label: root.stock-count > 0 ? root.stock-count + " cards\nDraw" : "Recycle";
+                    activated => { root.draw-stock(); }
+                }
+
+                if root.has-waste: CardFace {
+                    x: 126px;
+                    card: root.waste-card;
+                    activated => { root.waste-activated(); }
+                }
+                if !root.has-waste: EmptySlot {
+                    x: 126px;
+                    label: "Waste";
+                    activated => { root.waste-activated(); }
+                }
+
+                for foundation[index] in root.foundations: CardFace {
+                    x: parent.width - (4 - index) * 116px;
+                    card: foundation;
+                    activated => { root.foundation-activated(index); }
+                }
+            }
+
+            Rectangle {
+                x: 24px;
+                y: 188px;
+                width: parent.width - 48px;
+                height: parent.height - 206px;
+
+                for column[column-index] in root.columns: Rectangle {
+                    x: column-index * (parent.width - 104px) / 6;
+                    width: 104px;
+                    height: parent.height;
+
+                    if column.cards.length == 0: EmptySlot {
+                        label: "Empty column\nKings only";
+                        activated => { root.tableau-activated(column-index, 0); }
+                    }
+
+                    for card[card-index] in column.cards: CardFace {
+                        y: card-index * (card.face-up ? 30px : 18px);
+                        card: card;
+                        activated => { root.tableau-activated(column-index, card-index); }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "Choose a face-up card or run, then choose its destination. All play stays on this device.";
+            color: #aac5bd;
+            font-size: 14px;
+            horizontal-alignment: center;
         }
     }
 }
-

@@ -4,6 +4,7 @@ Every runtime visual or audio asset must be recorded here before release.
 
 | Asset | Author/source | License | Creation or audit record |
 | --- | --- | --- | --- |
-| `ui/app.slint` colors and layout | Solitaire contributors | MIT | Authored as geometric Slint primitives for this repository; no external visual reference was traced. |
+| `ui/app.slint` colors, layout, and card back | Solitaire contributors | MIT | Authored as geometric Slint primitives for this repository on 2026-08-20; no external visual reference was traced. |
+| Unicode suit glyphs (♣ ♦ ♥ ♠) | Unicode Standard, rendered by the user's system font | Unicode License v3 | Standard encoded text characters, not bundled artwork. |
 
 There are currently no raster images, fonts, icons, or audio files in the runtime. Card artwork will be assembled from original geometric vector primitives and recorded here when introduced.

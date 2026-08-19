@@ -2,4 +2,5 @@
 
 pub mod cards;
 pub mod klondike;
+pub mod persistence;
 pub mod replay;
