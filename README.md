@@ -11,7 +11,7 @@ The repository contains:
 
 ## Status
 
-M0 foundation and the playable Klondike vertical slice are implemented. Klondike supports deterministic draw-one/draw-three deals, standard and Vegas rules in the domain layer, legal move validation, undo/redo, hints, safe-foundation completion, and automatic local resume. The remaining four games and collection layer are tracked in [ROADMAP.md](ROADMAP.md).
+M0 foundation and the playable Klondike vertical slice are implemented. Renderer-independent, deterministic, serializable rules engines are also complete for Spider (one/two/four suit), FreeCell, Pyramid, and TriPeaks. Their Slint play surfaces and the collection layer remain tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Build
 
