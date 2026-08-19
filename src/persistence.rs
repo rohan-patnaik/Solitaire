@@ -291,6 +291,24 @@ mod tests {
     }
 
     #[test]
+    fn untimed_save_with_elapsed_time_is_rejected() {
+        let path = test_path("untimed-elapsed.json");
+        let game = Game::new(778, Options::default());
+        save_klondike(&path, &game).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["payload"]["state"]["elapsed_seconds"] = serde_json::json!(1);
+        atomic_write(&path, &serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(matches!(
+            load_klondike(&path),
+            Err(SaveError::InvalidState(
+                ValidationError::ElapsedTimeInUntimedGame
+            ))
+        ));
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn xdg_root_requires_nonempty_absolute_path() {
         let home = OsStr::new("/home/player");
         assert_eq!(

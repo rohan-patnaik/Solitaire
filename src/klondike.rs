@@ -141,6 +141,9 @@ impl State {
     /// # Errors
     /// Returns [`ValidationError`] if this state could not result from legal play.
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if !self.options.timed && self.elapsed_seconds != 0 {
+            return Err(ValidationError::ElapsedTimeInUntimedGame);
+        }
         if self.card_count() != 52 {
             return Err(ValidationError::CardCount(self.card_count()));
         }
@@ -227,6 +230,15 @@ pub struct Game {
 pub struct ReplaySetup {
     pub options: Options,
     pub elapsed_seconds: u64,
+}
+
+impl ReplaySetup {
+    fn validate(self) -> Result<(), MoveError> {
+        if !self.options.timed && self.elapsed_seconds != 0 {
+            return Err(MoveError::InvalidReplaySetup);
+        }
+        Ok(())
+    }
 }
 
 impl Game {
@@ -319,6 +331,7 @@ impl Game {
         if replay.game != "klondike" {
             return Err(MoveError::WrongGame);
         }
+        replay.setup.validate()?;
         let mut game = Self::new(replay.seed, replay.setup.options);
         for action in &replay.actions {
             game.apply(action.clone())?;
@@ -682,8 +695,10 @@ fn valid_tableau_run(cards: &[Card]) -> bool {
 fn states_equivalent(first: &State, second: &State) -> bool {
     let mut first = first.clone();
     let mut second = second.clone();
-    first.elapsed_seconds = 0;
-    second.elapsed_seconds = 0;
+    if first.options.timed && second.options.timed {
+        first.elapsed_seconds = 0;
+        second.elapsed_seconds = 0;
+    }
     first == second
 }
 
@@ -715,6 +730,7 @@ pub enum MoveError {
     InvalidColumn,
     WrongGame,
     UnsupportedReplayVersion(u16),
+    InvalidReplaySetup,
 }
 
 impl std::fmt::Display for MoveError {
@@ -734,6 +750,7 @@ pub enum ValidationError {
     InvalidTableauRun,
     FoundationOrder,
     RedealCounterExceedsLimit,
+    ElapsedTimeInUntimedGame,
     UndoActionCardinality,
     RedoActionCardinality,
     InvalidUndoTransition,
@@ -945,6 +962,24 @@ mod tests {
     }
 
     #[test]
+    fn untimed_replay_with_elapsed_time_is_rejected_from_typed_and_json_values() {
+        let game = Game::new(1, Options::default());
+        let mut replay = game.replay();
+        replay.setup.elapsed_seconds = 1;
+        assert_eq!(
+            Game::from_replay(&replay),
+            Err(MoveError::InvalidReplaySetup)
+        );
+
+        let json = replay.to_json().unwrap();
+        let decoded = Replay::<Action, ReplaySetup>::from_json(&json).unwrap();
+        assert_eq!(
+            Game::from_replay(&decoded),
+            Err(MoveError::InvalidReplaySetup)
+        );
+    }
+
+    #[test]
     fn every_legal_action_preserves_cards() {
         for seed in 0..128 {
             let mut game = Game::new(seed, Options::default());
@@ -1027,6 +1062,13 @@ mod tests {
 
     #[test]
     fn validation_rejects_rule_and_history_corruption() {
+        let mut untimed = Game::new(8, Options::default());
+        untimed.state.elapsed_seconds = 1;
+        assert_eq!(
+            untimed.validate(),
+            Err(ValidationError::ElapsedTimeInUntimedGame)
+        );
+
         let mut redeals = Game::new(
             9,
             Options {
