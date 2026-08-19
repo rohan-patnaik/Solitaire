@@ -7,3 +7,4 @@ pub mod persistence;
 pub mod pyramid;
 pub mod replay;
 pub mod spider;
+pub mod tripeaks;
