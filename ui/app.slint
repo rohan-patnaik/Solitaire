@@ -22,6 +22,7 @@ component CardFace inherits Rectangle {
     background: card.face-up ? #fffaf0 : #1f6b61;
     accessible-role: button;
     accessible-label: card.accessible-label;
+    accessible-action-default => { root.activated(); }
 
     if !card.face-up: Rectangle {
         x: 9px;
@@ -55,6 +56,17 @@ component CardFace inherits Rectangle {
     }
 
     TouchArea { clicked => { root.activated(); } }
+    FocusScope {
+        x: 0;
+        width: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 component EmptySlot inherits Rectangle {
@@ -68,6 +80,7 @@ component EmptySlot inherits Rectangle {
     background: #ffffff0d;
     accessible-role: button;
     accessible-label: label;
+    accessible-action-default => { root.activated(); }
 
     Text {
         text: parent.label;
@@ -78,6 +91,17 @@ component EmptySlot inherits Rectangle {
         wrap: word-wrap;
     }
     TouchArea { clicked => { root.activated(); } }
+    FocusScope {
+        x: 0;
+        width: 0;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 export component AppWindow inherits Window {
@@ -106,6 +130,7 @@ export component AppWindow inherits Window {
     callback redo-requested;
     callback hint-requested;
     callback autocomplete-requested;
+    pure callback fan-spacing(int, float) -> float;
 
     VerticalBox {
         padding: 22px;
@@ -148,6 +173,7 @@ export component AppWindow inherits Window {
             Rectangle { horizontal-stretch: 1; }
             Text {
                 text: root.status-text;
+                accessible-live-region: polite;
                 color: #f4d78e;
                 font-size: 16px;
                 vertical-alignment: center;
@@ -206,7 +232,7 @@ export component AppWindow inherits Window {
                     }
 
                     for card[card-index] in column.cards: CardFace {
-                        y: card-index * (card.face-up ? 30px : 18px);
+                        y: card-index * root.fan-spacing(column.cards.length, parent.height / 1px) * 1px;
                         card: card;
                         activated => { root.tableau-activated(column-index, card-index); }
                     }

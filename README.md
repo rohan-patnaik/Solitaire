@@ -28,6 +28,7 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Select a face-up card or complete run, then select a tableau column or foundation.
 - Select the stock to draw or recycle the waste.
 - Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
+- Card and empty-slot controls expose assistive-technology default actions, accept Tab focus plus Space/Enter activation, and announce status changes as a polite live region. Full gamepad navigation remains M5 work.
 - Choose draw one or draw three before starting a new deal.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.

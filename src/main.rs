@@ -216,6 +216,7 @@ impl Controller {
 
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
+    app.on_fan_spacing(bounded_fan_spacing);
     let controller = Rc::new(RefCell::new(Controller::new()));
     render(&app, &controller.borrow());
 
@@ -527,5 +528,29 @@ fn friendly_error(error: solitaire::klondike::MoveError) -> String {
         MoveError::FaceDownCard => "Face-down cards cannot move".into(),
         MoveError::BrokenRun => "That group is not a complete alternating run".into(),
         _ => "That move is not available".into(),
+    }
+}
+
+fn bounded_fan_spacing(card_count: i32, available_height: f32) -> f32 {
+    const CARD_HEIGHT: f32 = 142.0;
+    const MIN_SPACING: f32 = 12.0;
+    const MAX_SPACING: f32 = 30.0;
+    if card_count <= 1 {
+        return MAX_SPACING;
+    }
+    let divisor = i16::try_from(card_count - 1).unwrap_or(i16::MAX);
+    ((available_height - CARD_HEIGHT) / f32::from(divisor)).clamp(MIN_SPACING, MAX_SPACING)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bounded_fan_spacing;
+
+    #[test]
+    fn fan_spacing_keeps_long_legal_columns_visible() {
+        let spacing = bounded_fan_spacing(19, 410.0);
+        assert!((12.0..=30.0).contains(&spacing));
+        assert!(spacing * 18.0 + 142.0 <= 410.0 + f32::EPSILON);
+        assert!((bounded_fan_spacing(1, 410.0) - 30.0).abs() < f32::EPSILON);
     }
 }
