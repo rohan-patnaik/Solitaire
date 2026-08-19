@@ -1,12 +1,14 @@
 use crate::klondike::{Game, ValidationError};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
-use std::fs;
-use std::io;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const CURRENT_SAVE_VERSION: u16 = 1;
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SaveEnvelope<T> {
@@ -97,9 +99,87 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
     fs::create_dir_all(parent)?;
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, bytes)?;
-    fs::rename(temporary, path)
+    let _lock = SaveLock::acquire(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid save filename"))?;
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let temporary = parent.join(format!(
+        ".{file_name}.tmp-{}-{sequence}",
+        std::process::id()
+    ));
+    let result = (|| {
+        let mut file = private_create_new(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[derive(Debug)]
+struct SaveLock {
+    file: File,
+}
+
+impl SaveLock {
+    fn acquire(path: &Path) -> io::Result<Self> {
+        let file = open_lock_file(path)?;
+        file.lock()?;
+        Ok(Self { file })
+    }
+
+    #[cfg(test)]
+    fn try_acquire(path: &Path) -> io::Result<Self> {
+        let file = open_lock_file(path)?;
+        file.try_lock()?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for SaveLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+fn open_lock_file(path: &Path) -> io::Result<File> {
+    let lock_path = path.with_extension("json.lock");
+    private_open(&lock_path, false)
+}
+
+fn private_create_new(path: &Path) -> io::Result<File> {
+    private_open(path, true)
+}
+
+#[cfg(unix)]
+fn private_open(path: &Path, create_new: bool) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).mode(0o600);
+    if create_new {
+        options.create_new(true);
+    } else {
+        options.create(true);
+    }
+    options.open(path)
+}
+
+#[cfg(not(unix))]
+fn private_open(path: &Path, create_new: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true);
+    if create_new {
+        options.create_new(true);
+    } else {
+        options.create(true);
+    }
+    options.open(path)
 }
 
 #[derive(Debug)]
@@ -225,5 +305,50 @@ mod tests {
             save_root(Some(OsStr::new("/data/player")), Some(home)),
             Some(PathBuf::from("/data/player"))
         );
+    }
+
+    #[test]
+    fn save_lock_excludes_another_writer() {
+        let path = test_path("locked.json");
+        let first = SaveLock::try_acquire(&path).unwrap();
+        let error = SaveLock::try_acquire(&path).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        drop(first);
+        assert!(SaveLock::try_acquire(&path).is_ok());
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_use_collision_free_private_files() {
+        let path = test_path("concurrent.json");
+        let threads = (0..8)
+            .map(|value| {
+                let path = path.clone();
+                std::thread::spawn(move || atomic_write(&path, &[value; 64]).unwrap())
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(bytes.len(), 64);
+        assert!(bytes.iter().all(|byte| *byte == bytes[0]));
+        let prefix = format!(".{}.tmp-", path.file_name().unwrap().to_string_lossy());
+        assert!(
+            fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| !entry.file_name().to_string_lossy().starts_with(&prefix))
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
 }
