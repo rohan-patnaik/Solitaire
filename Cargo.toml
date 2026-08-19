@@ -6,6 +6,8 @@ license = "MIT"
 description = "An original offline collection of classic patience games for Omarchy"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 slint = "1"
 
 [build-dependencies]
@@ -15,4 +17,8 @@ slint-build = "1"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
 
