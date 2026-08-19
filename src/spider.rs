@@ -170,8 +170,12 @@ impl Game {
                         to: to_u8(to),
                         count: to_u8(count),
                     };
-                    let mut copy = self.clone();
-                    if copy.apply(action.clone()).is_ok() {
+                    let mut probe = Self {
+                        state: self.state.clone(),
+                        undo: Vec::new(),
+                        actions: Vec::new(),
+                    };
+                    if probe.apply(action.clone()).is_ok() {
                         return Some(action);
                     }
                 }

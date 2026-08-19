@@ -566,8 +566,14 @@ impl Game {
     }
 
     fn is_legal(&self, action: &Action) -> bool {
-        let mut copy = self.clone();
-        copy.apply_to_state(action).is_ok()
+        let mut probe = Self {
+            state: self.state.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            actions: Vec::new(),
+            redo_actions: Vec::new(),
+        };
+        probe.apply_to_state(action).is_ok()
     }
 
     fn foundation_hint(&self) -> Option<Action> {
@@ -870,6 +876,27 @@ mod tests {
                 game.apply(action).unwrap();
                 assert_eq!(game.state.card_count(), 52);
             }
+        }
+    }
+
+    #[test]
+    fn state_only_legality_matches_full_game_probe() {
+        let mut game = Game::new(5, Options::default());
+        for _ in 0..12 {
+            game.apply(Action::Draw).unwrap();
+        }
+        let candidates = [
+            Action::Draw,
+            Action::Recycle,
+            Action::Move {
+                from: Pile::Waste,
+                to: Pile::Tableau(0),
+                count: 1,
+            },
+        ];
+        for action in candidates {
+            let mut full = game.clone();
+            assert_eq!(game.is_legal(&action), full.apply_to_state(&action).is_ok());
         }
     }
 

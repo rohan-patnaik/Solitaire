@@ -183,8 +183,12 @@ impl Game {
     }
 
     fn is_legal(&self, action: Action) -> bool {
-        let mut copy = self.clone();
-        copy.apply_inner(action).is_ok()
+        let mut probe = Self {
+            state: self.state.clone(),
+            undo: Vec::new(),
+            actions: Vec::new(),
+        };
+        probe.apply_inner(action).is_ok()
     }
 
     fn apply_inner(&mut self, action: Action) -> Result<(), MoveError> {
