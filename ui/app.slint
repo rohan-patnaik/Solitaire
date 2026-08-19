@@ -17,8 +17,8 @@ component CardFace inherits Rectangle {
     width: 104px;
     height: 142px;
     border-radius: 9px;
-    border-width: card.selected ? 4px : 2px;
-    border-color: card.selected ? #f4c95d : (card.face-up ? #d5cbb7 : #8bc2b3);
+    border-width: card-focus.has-focus ? 5px : (card.selected ? 4px : 2px);
+    border-color: card-focus.has-focus ? #ffffff : (card.selected ? #f4c95d : (card.face-up ? #d5cbb7 : #8bc2b3));
     background: card.face-up ? #fffaf0 : #1f6b61;
     accessible-role: button;
     accessible-label: card.accessible-label;
@@ -56,12 +56,12 @@ component CardFace inherits Rectangle {
     }
 
     TouchArea { clicked => { root.activated(); } }
-    FocusScope {
+    card-focus := FocusScope {
         x: 0;
         width: 0;
         key-pressed(event) => {
             if (event.text == " " || event.text == "\n") {
-                root.activated();
+                if (!event.repeat) { root.activated(); }
                 return accept;
             }
             return reject;
@@ -75,8 +75,8 @@ component EmptySlot inherits Rectangle {
     width: 104px;
     height: 142px;
     border-radius: 9px;
-    border-width: 2px;
-    border-color: #80a49b;
+    border-width: slot-focus.has-focus ? 5px : 2px;
+    border-color: slot-focus.has-focus ? #ffffff : #80a49b;
     background: #ffffff0d;
     accessible-role: button;
     accessible-label: label;
@@ -91,12 +91,12 @@ component EmptySlot inherits Rectangle {
         wrap: word-wrap;
     }
     TouchArea { clicked => { root.activated(); } }
-    FocusScope {
+    slot-focus := FocusScope {
         x: 0;
         width: 0;
         key-pressed(event) => {
             if (event.text == " " || event.text == "\n") {
-                root.activated();
+                if (!event.repeat) { root.activated(); }
                 return accept;
             }
             return reject;

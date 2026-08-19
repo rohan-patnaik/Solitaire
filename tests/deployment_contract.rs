@@ -14,3 +14,15 @@ fn arch_recipe_is_immutable_and_checksum_pinned() {
     assert!(!recipe.contains("refs/tags"));
     assert!(!recipe.contains("'SKIP'"));
 }
+
+#[test]
+fn card_keyboard_controls_ignore_repeat_and_show_focus() {
+    let ui = include_str!("../ui/app.slint");
+    assert_eq!(
+        ui.matches("if (!event.repeat) { root.activated(); }")
+            .count(),
+        2
+    );
+    assert!(ui.contains("card-focus.has-focus ? #ffffff"));
+    assert!(ui.contains("slot-focus.has-focus ? #ffffff"));
+}
