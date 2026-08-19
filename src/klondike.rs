@@ -1,6 +1,7 @@
 use crate::cards::{Card, Rank, Suit, shuffle, standard_deck};
 use crate::replay::Replay;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 const TABLEAU_COUNT: usize = 7;
 
@@ -133,6 +134,47 @@ impl State {
             card.face_up = true;
             self.score(5, 0);
         }
+    }
+
+    /// Checks structural, card-conservation, and pile-order invariants.
+    ///
+    /// # Errors
+    /// Returns [`ValidationError`] if this state could not result from legal play.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.card_count() != 52 {
+            return Err(ValidationError::CardCount(self.card_count()));
+        }
+        let cards = self
+            .stock
+            .iter()
+            .chain(&self.waste)
+            .copied()
+            .chain(self.tableau.iter().flatten().map(|entry| entry.card))
+            .chain(self.foundations.iter().flatten().copied())
+            .collect::<HashSet<_>>();
+        if cards.len() != 52 {
+            return Err(ValidationError::DuplicateCard);
+        }
+        for column in &self.tableau {
+            let mut saw_face_up = false;
+            for entry in column {
+                if entry.face_up {
+                    saw_face_up = true;
+                } else if saw_face_up {
+                    return Err(ValidationError::FaceDownAboveFaceUp);
+                }
+            }
+        }
+        for (index, foundation) in self.foundations.iter().enumerate() {
+            for (rank_index, card) in foundation.iter().enumerate() {
+                if suit_index(card.suit) != index
+                    || usize::from(card.rank.value()) != rank_index + 1
+                {
+                    return Err(ValidationError::FoundationOrder);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -280,6 +322,18 @@ impl Game {
     /// Returns an error for malformed JSON.
     pub fn from_json(json: &str) -> serde_json::Result<Self> {
         serde_json::from_str(json)
+    }
+
+    /// Validates the current state and every state reachable through undo/redo.
+    ///
+    /// # Errors
+    /// Returns [`ValidationError`] when any serialized state violates invariants.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        self.state.validate()?;
+        for state in self.undo.iter().chain(&self.redo) {
+            state.validate()?;
+        }
+        Ok(())
     }
 
     /// Returns a deterministic, immediately legal suggestion.
@@ -608,6 +662,22 @@ impl std::fmt::Display for MoveError {
 
 impl std::error::Error for MoveError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationError {
+    CardCount(usize),
+    DuplicateCard,
+    FaceDownAboveFaceUp,
+    FoundationOrder,
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid Klondike save state: {self:?}")
+    }
+}
+
+impl std::error::Error for ValidationError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -834,5 +904,20 @@ mod tests {
         );
         timed.advance_time(10);
         assert_eq!(timed.elapsed_seconds, 10);
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_and_malformed_piles() {
+        let mut duplicate = State::new(1, Options::default());
+        duplicate.stock[0] = duplicate.stock[1];
+        assert_eq!(duplicate.validate(), Err(ValidationError::DuplicateCard));
+
+        let mut malformed = State::new(2, Options::default());
+        malformed.tableau[1][0].face_up = true;
+        malformed.tableau[1][1].face_up = false;
+        assert_eq!(
+            malformed.validate(),
+            Err(ValidationError::FaceDownAboveFaceUp)
+        );
     }
 }

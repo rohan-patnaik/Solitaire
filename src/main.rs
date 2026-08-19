@@ -1,7 +1,9 @@
 use slint::{ModelRc, SharedString, VecModel};
 use solitaire::cards::{Card, Rank, Suit};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
-use solitaire::persistence::{default_save_path, load_json, save_json};
+use solitaire::persistence::{
+    SaveError, default_save_path, load_klondike, quarantine_save, save_klondike,
+};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -43,17 +45,40 @@ struct Controller {
 
 impl Controller {
     fn new() -> Self {
-        let save_path = default_save_path();
-        let saved = save_path
-            .as_deref()
-            .and_then(|path| load_json::<Game>(path).ok());
+        let mut save_path = default_save_path();
+        let mut status = "Choose a card to begin".to_owned();
+        let saved = if let Some(path) = save_path.clone() {
+            match load_klondike(&path) {
+                Ok(game) => Some(game),
+                Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => {
+                    match quarantine_save(&path) {
+                        Ok(quarantined) => {
+                            status = format!(
+                                "Unreadable save preserved as {}; opened a fresh deal ({error})",
+                                quarantined.display()
+                            );
+                        }
+                        Err(quarantine_error) => {
+                            status = format!(
+                                "Save recovery failed; original left untouched ({error}; {quarantine_error})"
+                            );
+                            save_path = None;
+                        }
+                    }
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let seed = saved.as_ref().map_or_else(seed_now, |game| game.state.seed);
         Self {
             game: saved.unwrap_or_else(|| Game::new(seed, Options::default())),
             selection: None,
             save_path,
             next_seed: seed.wrapping_add(1),
-            status: "Choose a card to begin".into(),
+            status,
         }
     }
 
@@ -182,7 +207,7 @@ impl Controller {
 
     fn save(&mut self) {
         if let Some(path) = &self.save_path
-            && let Err(error) = save_json(path, &self.game)
+            && let Err(error) = save_klondike(path, &self.game)
         {
             self.status = format!("Move kept in memory; save failed: {error}");
         }
