@@ -1,23 +1,61 @@
 pkgname=solitaire-omarchy
-pkgver=0.1.0
-pkgrel=2
-_commit=49fda3a72376e3925fb092b65351a7b157dcb2e6
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
 pkgdesc="Original offline collection of classic patience games"
 arch=('x86_64')
 url="https://github.com/rohan-patnaik/Solitaire"
 license=('MIT')
 depends=('fontconfig' 'wayland' 'libxkbcommon')
-makedepends=('cargo')
-source=("$pkgname-$_commit.tar.gz::$url/archive/$_commit.tar.gz")
-sha256sums=('078d71dff0246f6b72107e303e668bc5ccd0b38171d8d04938ea2a0eeb2e38b0')
+makedepends=('cargo' 'git')
+if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
+  source=("$SOLITAIRE_SOURCE_ARCHIVE")
+else
+  source=('Solitaire::git+https://github.com/rohan-patnaik/Solitaire.git')
+fi
+sha256sums=('SKIP')
+
+pkgver() {
+  cd Solitaire
+  if [[ -f .solitaire-source-revision ]]; then
+    local revision
+    revision=$(<.solitaire-source-revision)
+    [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
+    printf '0.1.0.r0.g%s' "${revision:0:7}"
+    return
+  fi
+  printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" \
+    "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd Solitaire
+  local revision
+  if [[ -f .solitaire-source-revision ]]; then
+    revision=$(<.solitaire-source-revision)
+  else
+    revision=$(git rev-parse HEAD)
+    printf '%s\n' "$revision" > .solitaire-source-revision
+  fi
+  [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
+  if [[ -n ${SOLITAIRE_EXPECTED_REVISION:-} ]]; then
+    [[ $revision == "$SOLITAIRE_EXPECTED_REVISION" ]]
+  fi
+}
 
 build() {
-  cd "Solitaire-$_commit"
+  cd Solitaire
   cargo build --locked --release
 }
 
+check() {
+  cd Solitaire
+  cargo test --locked --all-targets --all-features
+}
+
 package() {
-  cd "Solitaire-$_commit"
+  cd Solitaire
   install -Dm755 target/release/solitaire "$pkgdir/usr/bin/solitaire"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 .solitaire-source-revision \
+    "$pkgdir/usr/share/$pkgname/source-revision"
 }

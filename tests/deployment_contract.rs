@@ -7,12 +7,23 @@ fn plugin_uses_detached_process_lifecycle() {
 }
 
 #[test]
-fn arch_recipe_is_immutable_and_checksum_pinned() {
+fn arch_recipe_packages_the_expected_revision() {
     let recipe = include_str!("../packaging/arch/PKGBUILD");
-    assert!(recipe.contains("_commit=49fda3a72376e3925fb092b65351a7b157dcb2e6"));
-    assert!(recipe.contains("078d71dff0246f6b72107e303e668bc5ccd0b38171d8d04938ea2a0eeb2e38b0"));
-    assert!(!recipe.contains("refs/tags"));
-    assert!(!recipe.contains("'SKIP'"));
+    assert!(recipe.contains("SOLITAIRE_SOURCE_ARCHIVE"));
+    assert!(recipe.contains("SOLITAIRE_EXPECTED_REVISION"));
+    assert!(recipe.contains(".solitaire-source-revision"));
+    assert!(recipe.contains("cargo test --locked --all-targets --all-features"));
+    assert!(recipe.contains("$pkgdir/usr/share/$pkgname/source-revision"));
+    assert!(!recipe.contains("_commit=49fda3a"));
+}
+
+#[test]
+fn arch_ci_verifies_the_installed_revision() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    assert!(workflow.contains("git archive \"$GITHUB_SHA\""));
+    assert!(workflow.contains("SOLITAIRE_EXPECTED_REVISION=\"$GITHUB_SHA\""));
+    assert!(workflow.contains("/usr/share/solitaire-omarchy/source-revision"));
+    assert!(workflow.contains("pacman -Q solitaire-omarchy"));
 }
 
 #[test]
