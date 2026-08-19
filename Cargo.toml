@@ -1,0 +1,18 @@
+[package]
+name = "solitaire"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "An original offline collection of classic patience games for Omarchy"
+
+[dependencies]
+slint = "1"
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+

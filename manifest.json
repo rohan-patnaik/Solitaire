@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.rohan-patnaik.solitaire",
+  "name": "Solitaire",
+  "version": "0.1.0",
+  "author": "Rohan Patnaik",
+  "license": "MIT",
+  "description": "Launch an original offline collection of five classic patience games from Omarchy Quattro.",
+  "kinds": ["menu"],
+  "entryPoints": {
+    "menu": "Plugin.qml"
+  }
+}
+

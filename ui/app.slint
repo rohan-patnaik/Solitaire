@@ -1,0 +1,46 @@
+import { Button, ComboBox, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Solitaire";
+    width: 1100px;
+    height: 720px;
+    background: #143d35;
+
+    VerticalBox {
+        padding: 32px;
+        spacing: 18px;
+
+        Text {
+            text: "Solitaire";
+            color: #f5ead7;
+            font-size: 42px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: "Five classic patience games. Original art. No accounts, ads, or tracking.";
+            color: #d8d3c7;
+            font-size: 18px;
+        }
+
+        ComboBox {
+            model: ["Klondike", "Spider", "FreeCell", "Pyramid", "TriPeaks"];
+            current-value: "Klondike";
+        }
+
+        Button { text: "New game"; }
+
+        Rectangle {
+            background: #0f302a;
+            border-radius: 16px;
+
+            Text {
+                text: "Playable game table lands in milestone M1";
+                color: #f5ead7;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
