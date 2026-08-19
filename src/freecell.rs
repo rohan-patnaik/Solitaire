@@ -120,6 +120,7 @@ impl Game {
             version: CURRENT_REPLAY_VERSION,
             game: "freecell".into(),
             seed: self.state.deal_number,
+            setup: (),
             actions: self.actions.clone(),
         }
     }

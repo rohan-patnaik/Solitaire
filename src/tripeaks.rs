@@ -137,11 +137,12 @@ impl Game {
     }
 
     #[must_use]
-    pub fn replay(&self) -> Replay<Action> {
+    pub fn replay(&self) -> Replay<Action, Options> {
         Replay {
             version: CURRENT_REPLAY_VERSION,
             game: "tripeaks".into(),
             seed: self.state.seed,
+            setup: self.state.options,
             actions: self.actions.clone(),
         }
     }
@@ -150,11 +151,11 @@ impl Game {
     ///
     /// # Errors
     /// Returns an error for a wrong game identifier or illegal action.
-    pub fn from_replay(replay: &Replay<Action>, options: Options) -> Result<Self, MoveError> {
+    pub fn from_replay(replay: &Replay<Action, Options>) -> Result<Self, MoveError> {
         if replay.game != "tripeaks" {
             return Err(MoveError::WrongGame);
         }
-        let mut game = Self::new(replay.seed, options);
+        let mut game = Self::new(replay.seed, replay.setup);
         for action in &replay.actions {
             game.apply(*action)?;
         }
@@ -280,11 +281,6 @@ mod tests {
         let replay = game.replay();
         let drawn = game.state.clone();
         assert!(game.undo());
-        assert_eq!(
-            Game::from_replay(&replay, Options::default())
-                .unwrap()
-                .state,
-            drawn
-        );
+        assert_eq!(Game::from_replay(&replay).unwrap().state, drawn);
     }
 }

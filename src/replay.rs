@@ -1,23 +1,25 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-pub const CURRENT_REPLAY_VERSION: u16 = 1;
+pub const CURRENT_REPLAY_VERSION: u16 = 2;
 
 /// A portable, versioned record of a deterministic game.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Replay<A> {
+pub struct Replay<A, S = ()> {
     pub version: u16,
     pub game: String,
     pub seed: u64,
+    pub setup: S,
     pub actions: Vec<A>,
 }
 
-impl<A> Replay<A> {
+impl<A, S> Replay<A, S> {
     #[must_use]
-    pub fn new(game: impl Into<String>, seed: u64) -> Self {
+    pub fn new(game: impl Into<String>, seed: u64, setup: S) -> Self {
         Self {
             version: CURRENT_REPLAY_VERSION,
             game: game.into(),
             seed,
+            setup,
             actions: Vec::new(),
         }
     }
@@ -27,7 +29,7 @@ impl<A> Replay<A> {
     }
 }
 
-impl<A: Serialize> Replay<A> {
+impl<A: Serialize, S: Serialize> Replay<A, S> {
     /// Serializes this replay to compact JSON.
     ///
     /// # Errors
@@ -38,7 +40,7 @@ impl<A: Serialize> Replay<A> {
     }
 }
 
-impl<A: DeserializeOwned> Replay<A> {
+impl<A: DeserializeOwned, S: DeserializeOwned> Replay<A, S> {
     /// Reads a replay and rejects unsupported format versions.
     ///
     /// # Errors
@@ -89,7 +91,7 @@ mod tests {
 
     #[test]
     fn replay_round_trips() {
-        let mut replay = Replay::new("klondike", 7);
+        let mut replay = Replay::new("klondike", 7, "draw-one".to_owned());
         replay.push(Action::Draw);
         let json = replay.to_json().unwrap();
         assert_eq!(Replay::from_json(&json).unwrap(), replay);
@@ -97,7 +99,7 @@ mod tests {
 
     #[test]
     fn future_replay_is_rejected_cleanly() {
-        let json = r#"{"version":99,"game":"klondike","seed":7,"actions":[]}"#;
+        let json = r#"{"version":99,"game":"klondike","seed":7,"setup":null,"actions":[]}"#;
         let error = Replay::<Action>::from_json(json).unwrap_err();
         assert!(matches!(error, ReplayError::UnsupportedVersion(99)));
     }

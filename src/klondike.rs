@@ -163,6 +163,12 @@ pub struct Game {
     redo_actions: Vec<Action>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplaySetup {
+    pub options: Options,
+    pub elapsed_seconds: u64,
+}
+
 impl Game {
     #[must_use]
     pub fn new(seed: u64, options: Options) -> Self {
@@ -227,11 +233,15 @@ impl Game {
     }
 
     #[must_use]
-    pub fn replay(&self) -> Replay<Action> {
+    pub fn replay(&self) -> Replay<Action, ReplaySetup> {
         Replay {
             version: crate::replay::CURRENT_REPLAY_VERSION,
             game: "klondike".into(),
             seed: self.state.seed,
+            setup: ReplaySetup {
+                options: self.state.options,
+                elapsed_seconds: self.state.elapsed_seconds,
+            },
             actions: self.actions.clone(),
         }
     }
@@ -241,15 +251,16 @@ impl Game {
     /// # Errors
     ///
     /// Returns an error if the replay identifies another game or contains an
-    /// action that is illegal for the supplied options.
-    pub fn from_replay(replay: &Replay<Action>, options: Options) -> Result<Self, MoveError> {
+    /// action that is illegal for the recorded options.
+    pub fn from_replay(replay: &Replay<Action, ReplaySetup>) -> Result<Self, MoveError> {
         if replay.game != "klondike" {
             return Err(MoveError::WrongGame);
         }
-        let mut game = Self::new(replay.seed, options);
+        let mut game = Self::new(replay.seed, replay.setup.options);
         for action in &replay.actions {
             game.apply(action.clone())?;
         }
+        game.state.elapsed_seconds = replay.setup.elapsed_seconds;
         Ok(game)
     }
 
@@ -760,8 +771,24 @@ mod tests {
 
         let saved = game.to_json().unwrap();
         assert_eq!(Game::from_json(&saved).unwrap(), game);
-        let rebuilt = Game::from_replay(&game.replay(), options).unwrap();
+        let rebuilt = Game::from_replay(&game.replay()).unwrap();
         assert_eq!(rebuilt.state, game.state);
+    }
+
+    #[test]
+    fn replay_preserves_variant_and_timed_elapsed_state() {
+        let options = Options {
+            draw_mode: DrawMode::Three,
+            scoring: Scoring::Vegas,
+            max_redeals: Some(1),
+            timed: true,
+        };
+        let mut game = Game::new(314, options);
+        game.apply(Action::Draw).unwrap();
+        game.state.advance_time(37);
+        let rebuilt = Game::from_replay(&game.replay()).unwrap();
+        assert_eq!(rebuilt.state, game.state);
+        assert_eq!(rebuilt.state.options, options);
     }
 
     #[test]

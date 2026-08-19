@@ -133,11 +133,12 @@ impl Game {
     }
 
     #[must_use]
-    pub fn replay(&self) -> Replay<Action> {
+    pub fn replay(&self) -> Replay<Action, SuitMode> {
         Replay {
             version: CURRENT_REPLAY_VERSION,
             game: "spider".into(),
             seed: self.state.seed,
+            setup: self.state.mode,
             actions: self.actions.clone(),
         }
     }
@@ -147,11 +148,11 @@ impl Game {
     /// # Errors
     ///
     /// Returns an error for the wrong game identifier or an illegal action.
-    pub fn from_replay(replay: &Replay<Action>, mode: SuitMode) -> Result<Self, MoveError> {
+    pub fn from_replay(replay: &Replay<Action, SuitMode>) -> Result<Self, MoveError> {
         if replay.game != "spider" {
             return Err(MoveError::WrongGame);
         }
-        let mut game = Self::new(replay.seed, mode);
+        let mut game = Self::new(replay.seed, replay.setup);
         for action in &replay.actions {
             game.apply(action.clone())?;
         }
@@ -455,9 +456,10 @@ mod tests {
         let replay = game.replay();
         assert!(game.undo());
         assert_eq!(game.state.stock.len(), 50);
+        assert_eq!(Game::from_replay(&replay).unwrap().state, dealt);
         assert_eq!(
-            Game::from_replay(&replay, SuitMode::Two).unwrap().state,
-            dealt
+            Game::from_replay(&replay).unwrap().state.mode,
+            SuitMode::Two
         );
     }
 }
