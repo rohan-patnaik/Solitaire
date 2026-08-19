@@ -1,22 +1,23 @@
 pkgname=solitaire-omarchy
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
+_commit=49fda3a72376e3925fb092b65351a7b157dcb2e6
 pkgdesc="Original offline collection of classic patience games"
 arch=('x86_64')
 url="https://github.com/rohan-patnaik/Solitaire"
 license=('MIT')
 depends=('fontconfig' 'wayland' 'libxkbcommon')
 makedepends=('cargo')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=("$pkgname-$_commit.tar.gz::$url/archive/$_commit.tar.gz")
+sha256sums=('078d71dff0246f6b72107e303e668bc5ccd0b38171d8d04938ea2a0eeb2e38b0')
 
 build() {
-  cd "Solitaire-$pkgver"
+  cd "Solitaire-$_commit"
   cargo build --locked --release
 }
 
 package() {
-  cd "Solitaire-$pkgver"
+  cd "Solitaire-$_commit"
   install -Dm755 target/release/solitaire "$pkgdir/usr/bin/solitaire"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

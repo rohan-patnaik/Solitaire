@@ -11,8 +11,7 @@ Item {
   property var pluginRegistry
 
   function open(payloadJson) {
-    if (!launcher.running)
-      launcher.running = true
+    launcher.startDetached()
   }
 
   function close() {}
