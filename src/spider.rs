@@ -90,7 +90,11 @@ pub struct Game {
     #[serde(default)]
     undo: Vec<State>,
     #[serde(default)]
+    redo: Vec<State>,
+    #[serde(default)]
     actions: Vec<Action>,
+    #[serde(default)]
+    redo_actions: Vec<Action>,
 }
 
 impl Game {
@@ -99,7 +103,9 @@ impl Game {
         Self {
             state: State::new(seed, mode),
             undo: Vec::new(),
+            redo: Vec::new(),
             actions: Vec::new(),
+            redo_actions: Vec::new(),
         }
     }
 
@@ -119,7 +125,9 @@ impl Game {
             return Err(error);
         }
         self.undo.push(before);
+        self.redo.clear();
         self.actions.push(action);
+        self.redo_actions.clear();
         Ok(())
     }
 
@@ -127,9 +135,32 @@ impl Game {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        self.state = previous;
-        self.actions.pop();
+        self.redo.push(std::mem::replace(&mut self.state, previous));
+        if let Some(action) = self.actions.pop() {
+            self.redo_actions.push(action);
+        }
         true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(std::mem::replace(&mut self.state, next));
+        if let Some(action) = self.redo_actions.pop() {
+            self.actions.push(action);
+        }
+        true
+    }
+
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
     }
 
     #[must_use]
@@ -176,7 +207,9 @@ impl Game {
                     let mut probe = Self {
                         state: self.state.clone(),
                         undo: Vec::new(),
+                        redo: Vec::new(),
                         actions: Vec::new(),
+                        redo_actions: Vec::new(),
                     };
                     if probe.apply(action.clone()).is_ok() {
                         return Some(action);
@@ -457,13 +490,17 @@ mod tests {
     }
 
     #[test]
-    fn undo_and_replay_restore_a_deal_row() {
+    fn undo_redo_and_replay_restore_a_deal_row() {
         let mut game = Game::new(7, SuitMode::Two);
         game.apply(Action::DealRow).unwrap();
         let dealt = game.state.clone();
         let replay = game.replay();
+        assert!(game.can_undo());
         assert!(game.undo());
+        assert!(game.can_redo());
         assert_eq!(game.state.stock.len(), 50);
+        assert!(game.redo());
+        assert_eq!(game.state, dealt);
         assert_eq!(Game::from_replay(&replay).unwrap().state, dealt);
         assert_eq!(
             Game::from_replay(&replay).unwrap().state.mode,
