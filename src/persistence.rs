@@ -889,15 +889,39 @@ mod tests {
         let threads = (0..8)
             .map(|value| {
                 let path = path.clone();
-                std::thread::spawn(move || atomic_write(&path, &[value; 64]).unwrap())
+                std::thread::spawn(move || {
+                    const MAX_ATTEMPTS: usize = 16;
+                    for attempt in 1..=MAX_ATTEMPTS {
+                        match atomic_write(&path, &[value; 64]) {
+                            Ok(()) => return attempt,
+                            Err(error)
+                                if error.kind() == io::ErrorKind::WouldBlock
+                                    && attempt < MAX_ATTEMPTS =>
+                            {
+                                std::thread::yield_now();
+                            }
+                            Err(error) => panic!(
+                                "atomic write did not succeed after {attempt} bounded attempts: {error}"
+                            ),
+                        }
+                    }
+                    unreachable!("the final bounded attempt always returns or panics")
+                })
             })
             .collect::<Vec<_>>();
-        for thread in threads {
-            thread.join().unwrap();
-        }
+        let attempts = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(attempts.len(), 8);
+        assert!(attempts.iter().all(|attempt| (1..=16).contains(attempt)));
         let bytes = fs::read(&path).unwrap();
         assert_eq!(bytes.len(), 64);
         assert!(bytes.iter().all(|byte| *byte == bytes[0]));
+        assert!(
+            bytes[0] < 8,
+            "the committed data came from one complete writer"
+        );
         let prefix = format!(".{}.tmp-", path.file_name().unwrap().to_string_lossy());
         assert!(
             fs::read_dir(path.parent().unwrap())
