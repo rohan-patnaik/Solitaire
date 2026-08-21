@@ -3,9 +3,10 @@ use solitaire::cards::{Card, Rank, Suit};
 use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
-    SaveError, default_freecell_save_path, default_save_path, default_spider_save_path,
-    load_freecell, load_klondike, load_spider, quarantine_save, save_freecell, save_klondike,
-    save_spider,
+    DealCounters, SaveError, SaveRevision, default_deal_counters_path, default_freecell_save_path,
+    default_save_path, default_spider_save_path, load_deal_counters, load_freecell_revisioned,
+    load_klondike_revisioned, load_spider_revisioned, quarantine_save, save_deal_counters,
+    save_freecell_checked, save_klondike_checked, save_spider_checked,
 };
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use std::cell::RefCell;
@@ -69,7 +70,10 @@ struct Controller {
     freecell: FreeCellGame,
     freecell_selection: Option<FreeCellSelection>,
     freecell_save_path: Option<PathBuf>,
-    next_seed: u64,
+    save_revisions: [Option<SaveRevision>; 3],
+    dirty: [bool; 3],
+    deal_counters_path: Option<PathBuf>,
+    next_seeds: DealCounters,
     status: String,
 }
 
@@ -77,17 +81,57 @@ impl Controller {
     fn new() -> Self {
         let mut save_path = default_save_path();
         let mut status = "Choose a card to begin".to_owned();
-        let saved = load_or_recover(&mut save_path, load_klondike, &mut status);
-        let seed = saved.as_ref().map_or_else(seed_now, |game| game.state.seed);
+        let saved = load_or_recover(&mut save_path, load_klondike_revisioned, &mut status);
+        let seed = saved
+            .as_ref()
+            .map_or_else(seed_now, |(game, _)| game.state.seed);
+        let klondike_revision = saved.as_ref().map(|(_, revision)| *revision);
         let mut spider_save_path = default_spider_save_path();
-        let spider = load_or_recover(&mut spider_save_path, load_spider, &mut status)
-            .unwrap_or_else(|| SpiderGame::new(seed.wrapping_add(1), SuitMode::One));
+        let (spider, spider_revision) =
+            load_or_recover(&mut spider_save_path, load_spider_revisioned, &mut status)
+                .map_or_else(
+                    || (SpiderGame::new(seed.wrapping_add(1), SuitMode::One), None),
+                    |(game, revision)| (game, Some(revision)),
+                );
         let mut freecell_save_path = default_freecell_save_path();
-        let freecell = load_or_recover(&mut freecell_save_path, load_freecell, &mut status)
-            .unwrap_or_else(|| FreeCellGame::new(seed.wrapping_add(2)));
+        let (freecell, freecell_revision) = load_or_recover(
+            &mut freecell_save_path,
+            load_freecell_revisioned,
+            &mut status,
+        )
+        .map_or_else(
+            || (FreeCellGame::new(seed.wrapping_add(2)), None),
+            |(game, revision)| (game, Some(revision)),
+        );
+        let deal_counters_path = default_deal_counters_path();
+        let defaults = DealCounters {
+            klondike: saved
+                .as_ref()
+                .map_or(seed, |(game, _)| game.state.seed)
+                .saturating_add(1),
+            spider: spider.state.seed.saturating_add(1),
+            freecell: freecell.state.deal_number.saturating_add(1),
+        };
+        let mut next_seeds = deal_counters_path
+            .as_deref()
+            .and_then(|path| match load_deal_counters(path) {
+                Ok(counters) => Some(counters),
+                Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => {
+                    status = format!(
+                        "Deal counters could not be restored; current game seeds were used: {error}"
+                    );
+                    None
+                }
+            })
+            .unwrap_or(defaults);
+        next_seeds.klondike = next_seeds.klondike.max(defaults.klondike);
+        next_seeds.spider = next_seeds.spider.max(defaults.spider);
+        next_seeds.freecell = next_seeds.freecell.max(defaults.freecell);
+        let save_revisions = [klondike_revision, spider_revision, freecell_revision];
         Self {
             active: GameKind::Klondike,
-            game: saved.unwrap_or_else(|| Game::new(seed, Options::default())),
+            game: saved.map_or_else(|| Game::new(seed, Options::default()), |(game, _)| game),
             selection: None,
             save_path,
             spider,
@@ -96,7 +140,10 @@ impl Controller {
             freecell,
             freecell_selection: None,
             freecell_save_path,
-            next_seed: seed.wrapping_add(3),
+            save_revisions,
+            dirty: [false; 3],
+            deal_counters_path,
+            next_seeds,
             status,
         }
     }
@@ -110,7 +157,7 @@ impl Controller {
                 } else {
                     "Move accepted".into()
                 };
-                self.save();
+                self.persist_mutation();
             }
             Err(error) => self.status = friendly_error(error),
         }
@@ -216,6 +263,10 @@ impl Controller {
     }
 
     fn new_game(&mut self, variant: &str) {
+        let Some(seed) = self.take_next_seed() else {
+            self.status = "No further deal number is representable; existing game preserved".into();
+            return;
+        };
         match self.active {
             GameKind::Klondike => {
                 let draw_mode = if variant == "Draw 3" {
@@ -224,7 +275,7 @@ impl Controller {
                     DrawMode::One
                 };
                 self.game = Game::new(
-                    self.next_seed,
+                    seed,
                     Options {
                         draw_mode,
                         scoring: Scoring::Standard,
@@ -239,35 +290,87 @@ impl Controller {
                     "4 suits" => SuitMode::Four,
                     _ => SuitMode::One,
                 };
-                self.spider = SpiderGame::new(self.next_seed, mode);
+                self.spider = SpiderGame::new(seed, mode);
             }
-            GameKind::FreeCell => self.freecell = FreeCellGame::new(self.next_seed),
+            GameKind::FreeCell => self.freecell = FreeCellGame::new(seed),
         }
-        self.next_seed = self.next_seed.wrapping_add(1);
         self.selection = None;
         self.spider_selection = None;
         self.freecell_selection = None;
         self.status = format!("New {} deal", self.game_name());
-        self.save();
+        self.persist_mutation();
     }
 
-    fn save(&mut self) {
-        let result = match self.active {
-            GameKind::Klondike => self
-                .save_path
-                .as_deref()
-                .map(|path| save_klondike(path, &self.game)),
-            GameKind::Spider => self
-                .spider_save_path
-                .as_deref()
-                .map(|path| save_spider(path, &self.spider)),
-            GameKind::FreeCell => self
-                .freecell_save_path
-                .as_deref()
-                .map(|path| save_freecell(path, &self.freecell)),
+    fn take_next_seed(&mut self) -> Option<u64> {
+        let seed = match self.active {
+            GameKind::Klondike => self.next_seeds.klondike,
+            GameKind::Spider => self.next_seeds.spider,
+            GameKind::FreeCell => self.next_seeds.freecell,
         };
-        if let Some(Err(error)) = result {
-            self.status = format!("Move kept in memory; save failed: {error}");
+        let next = seed.checked_add(1)?;
+        match self.active {
+            GameKind::Klondike => self.next_seeds.klondike = next,
+            GameKind::Spider => self.next_seeds.spider = next,
+            GameKind::FreeCell => self.next_seeds.freecell = next,
+        }
+        if let Some(path) = self.deal_counters_path.as_deref()
+            && let Err(error) = save_deal_counters(path, self.next_seeds)
+        {
+            match self.active {
+                GameKind::Klondike => self.next_seeds.klondike = seed,
+                GameKind::Spider => self.next_seeds.spider = seed,
+                GameKind::FreeCell => self.next_seeds.freecell = seed,
+            }
+            self.status = format!("Could not reserve the next deal persistently: {error}");
+            return None;
+        }
+        Some(seed)
+    }
+
+    fn save(&mut self) -> bool {
+        let index = self.active_index();
+        let result = match self.active {
+            GameKind::Klondike => self.save_path.as_deref().map(|path| {
+                save_klondike_checked(path, &self.game, &mut self.save_revisions[index])
+            }),
+            GameKind::Spider => self.spider_save_path.as_deref().map(|path| {
+                save_spider_checked(path, &self.spider, &mut self.save_revisions[index])
+            }),
+            GameKind::FreeCell => self.freecell_save_path.as_deref().map(|path| {
+                save_freecell_checked(path, &self.freecell, &mut self.save_revisions[index])
+            }),
+        };
+        match result {
+            Some(Ok(())) => {
+                self.dirty[index] = false;
+                true
+            }
+            Some(Err(error)) => {
+                self.dirty[index] = true;
+                self.status = format!(
+                    "Unsaved changes remain in memory; save failed: {error}. Retry before closing."
+                );
+                false
+            }
+            None => {
+                self.dirty[index] = true;
+                self.status = "Unsaved changes remain in memory; no writable save location. Retry before closing.".into();
+                false
+            }
+        }
+    }
+
+    fn persist_mutation(&mut self) {
+        let index = self.active_index();
+        self.dirty[index] = true;
+        let _ = self.save();
+    }
+
+    const fn active_index(&self) -> usize {
+        match self.active {
+            GameKind::Klondike => 0,
+            GameKind::Spider => 1,
+            GameKind::FreeCell => 2,
         }
     }
 
@@ -288,7 +391,7 @@ impl Controller {
                 } else {
                     "Move accepted".into()
                 };
-                self.save();
+                self.persist_mutation();
             }
             Err(error) => self.status = friendly_spider_error(error),
         }
@@ -342,7 +445,7 @@ impl Controller {
                 } else {
                     "Move accepted".into()
                 };
-                self.save();
+                self.persist_mutation();
             }
             Err(error) => self.status = friendly_freecell_error(error),
         }
@@ -427,8 +530,9 @@ impl Controller {
             GameKind::FreeCell => self.freecell.undo(),
         };
         self.status = if changed {
-            self.save();
-            "Move undone".into()
+            self.status = "Move undone".into();
+            self.persist_mutation();
+            self.status.clone()
         } else {
             "Nothing to undo".into()
         };
@@ -442,8 +546,9 @@ impl Controller {
             GameKind::FreeCell => self.freecell.redo(),
         };
         self.status = if changed {
-            self.save();
-            "Move restored".into()
+            self.status = "Move restored".into();
+            self.persist_mutation();
+            self.status.clone()
         } else {
             "Nothing to redo".into()
         };
@@ -470,7 +575,9 @@ impl Controller {
         if self.active == GameKind::Klondike {
             let count = self.game.autocomplete();
             self.status = format!("Moved {count} safe cards to foundations");
-            self.save();
+            if count > 0 {
+                self.persist_mutation();
+            }
         }
     }
 
@@ -493,6 +600,52 @@ impl Controller {
             GameKind::Klondike => self.game.can_redo(),
             GameKind::Spider => self.spider.can_redo(),
             GameKind::FreeCell => self.freecell.can_redo(),
+        }
+    }
+
+    fn retry_save(&mut self) {
+        if !self.dirty[self.active_index()] {
+            self.status = "No unsaved changes".into();
+        } else if self.save() {
+            self.status = "Changes saved".into();
+        }
+    }
+
+    fn reload_disk_copy(&mut self) {
+        let result = match self.active {
+            GameKind::Klondike => self.save_path.clone().map(|path| {
+                load_klondike_revisioned(&path).map(|(game, revision)| {
+                    self.game = game;
+                    revision
+                })
+            }),
+            GameKind::Spider => self.spider_save_path.clone().map(|path| {
+                load_spider_revisioned(&path).map(|(game, revision)| {
+                    self.spider = game;
+                    revision
+                })
+            }),
+            GameKind::FreeCell => self.freecell_save_path.clone().map(|path| {
+                load_freecell_revisioned(&path).map(|(game, revision)| {
+                    self.freecell = game;
+                    revision
+                })
+            }),
+        };
+        match result {
+            Some(Ok(revision)) => {
+                let index = self.active_index();
+                self.save_revisions[index] = Some(revision);
+                self.dirty[index] = false;
+                self.clear_selections();
+                self.status =
+                    "Reloaded the newer disk copy; in-memory changes were discarded".into();
+            }
+            Some(Err(error)) => {
+                self.status =
+                    format!("Could not reload the disk copy; in-memory changes remain: {error}");
+            }
+            None => self.status = "No save path is available; in-memory changes remain".into(),
         }
     }
 }
@@ -530,6 +683,23 @@ fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
     app.on_fan_spacing(bounded_fan_spacing);
     let controller = Rc::new(RefCell::new(Controller::new()));
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.window().on_close_requested(move || {
+            let mut controller = controller.borrow_mut();
+            if controller.dirty.iter().any(|dirty| *dirty) {
+                controller.status =
+                    "Unsaved changes remain. Retry save before closing the application.".into();
+                if let Some(app) = weak.upgrade() {
+                    render(&app, &controller);
+                }
+                slint::CloseRequestResponse::KeepWindowShown
+            } else {
+                slint::CloseRequestResponse::HideWindow
+            }
+        });
+    }
     render(&app, &controller.borrow());
     register_klondike_handlers(&app, &controller);
     register_spider_freecell_handlers(&app, &controller);
@@ -660,6 +830,20 @@ fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller
             update(&weak, &controller, Controller::autocomplete);
         });
     }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_retry_save_requested(move || {
+            update(&weak, &controller, Controller::retry_save);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_reload_disk_requested(move || {
+            update(&weak, &controller, Controller::reload_disk_copy);
+        });
+    }
 }
 
 fn update(
@@ -678,6 +862,7 @@ fn render(app: &AppWindow, controller: &Controller) {
     app.set_game_kind(controller.game_name().into());
     app.set_can_undo(controller.can_undo());
     app.set_can_redo(controller.can_redo());
+    app.set_has_unsaved_changes(controller.dirty[controller.active_index()]);
     app.set_status_text(controller.status.as_str().into());
     match controller.active {
         GameKind::Klondike => render_klondike(app, controller),
@@ -1099,7 +1284,14 @@ mod tests {
             freecell: FreeCellGame::new(seed),
             freecell_selection: None,
             freecell_save_path: None,
-            next_seed: seed.wrapping_add(1),
+            save_revisions: [None; 3],
+            dirty: [false; 3],
+            deal_counters_path: None,
+            next_seeds: DealCounters {
+                klondike: seed.saturating_add(1),
+                spider: seed.saturating_add(1),
+                freecell: seed.saturating_add(1),
+            },
             status: "Ready".into(),
         }
     }
@@ -1153,6 +1345,22 @@ mod tests {
         assert!(controller.freecell.can_redo());
         controller.redo();
         assert_eq!(controller.freecell.state, moved);
+    }
+
+    #[test]
+    fn undo_redo_never_hide_a_save_failure_and_retry_remains_available() {
+        let mut controller = controller(91);
+        controller.apply(Action::Draw);
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("Unsaved changes remain"));
+        controller.undo();
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("Unsaved changes remain"));
+        controller.redo();
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("Unsaved changes remain"));
+        controller.retry_save();
+        assert!(controller.status.contains("Unsaved changes remain"));
     }
 
     fn to_i32(value: usize) -> i32 {

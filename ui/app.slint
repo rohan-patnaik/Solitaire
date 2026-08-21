@@ -126,6 +126,7 @@ export component AppWindow inherits Window {
     in property <string> status-text: "Ready";
     in property <bool> can-undo;
     in property <bool> can-redo;
+    in property <bool> has-unsaved-changes;
 
     callback select-game(string);
     callback new-game(string);
@@ -142,6 +143,8 @@ export component AppWindow inherits Window {
     callback redo-requested;
     callback hint-requested;
     callback autocomplete-requested;
+    callback retry-save-requested;
+    callback reload-disk-requested;
     pure callback fan-spacing(int, float) -> float;
 
     VerticalBox {
@@ -166,6 +169,12 @@ export component AppWindow inherits Window {
                 text: "Open";
                 accessible-label: "Open selected game";
                 clicked => { root.select-game(game-picker.current-value); }
+            }
+            Button {
+                text: "Reload disk copy";
+                enabled: root.has-unsaved-changes;
+                accessible-label: "Discard in-memory changes and reload the newer disk copy";
+                clicked => { root.reload-disk-requested(); }
             }
             Rectangle { horizontal-stretch: 1; }
             Text {
@@ -216,6 +225,12 @@ export component AppWindow inherits Window {
             Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
             Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
+            Button {
+                text: "Retry save";
+                enabled: root.has-unsaved-changes;
+                accessible-label: "Retry saving changes kept in memory";
+                clicked => { root.retry-save-requested(); }
+            }
             if root.game-kind == "Klondike": Button {
                 text: "Finish safe moves";
                 clicked => { root.autocomplete-requested(); }
