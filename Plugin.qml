@@ -20,8 +20,7 @@ Item {
     id: launcher
     command: [
       "sh", "-lc",
-      "if command -v solitaire >/dev/null 2>&1; then exec solitaire; else notify-send --urgency=critical 'Solitaire is not installed' 'Install the native solitaire binary and try again.' 2>/dev/null || true; printf '%s\\n' 'Solitaire: native binary not found on PATH' >&2; exit 127; fi"
+      "binary=$(command -v solitaire 2>/dev/null) || { notify-send --urgency=critical 'Solitaire is not installed' 'Install the native solitaire binary and try again.' 2>/dev/null || true; printf '%s\\n' 'Solitaire: native binary not found on PATH' >&2; exit 127; }; started=$(date +%s); \"$binary\"; status=$?; elapsed=$(($(date +%s)-started)); if [ $status -ne 0 ] && [ $elapsed -le 10 ]; then message=\"Solitaire failed during startup (exit $status). Run solitaire in a terminal for details.\"; notify-send --urgency=critical 'Solitaire could not start' \"$message\" 2>/dev/null || true; printf '%s\\n' \"$message\" >&2; fi; exit $status"
     ]
   }
 }
-

@@ -7,53 +7,47 @@ url="https://github.com/rohan-patnaik/Solitaire"
 license=('MIT')
 depends=('fontconfig' 'wayland' 'libxkbcommon')
 makedepends=('cargo' 'git')
+_commit=deec66f09fa9d3afda9831f6cf258da3d660b873
 if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
+  : "${SOLITAIRE_SOURCE_SHA256:?SOLITAIRE_SOURCE_SHA256 is required for a local archive}"
   source=("$SOLITAIRE_SOURCE_ARCHIVE")
+  sha256sums=("$SOLITAIRE_SOURCE_SHA256")
+  _source_dir=Solitaire
 else
-  source=('Solitaire::git+https://github.com/rohan-patnaik/Solitaire.git')
+  source=("Solitaire-${_commit}.tar.gz::https://github.com/rohan-patnaik/Solitaire/archive/${_commit}.tar.gz")
+  sha256sums=('a9067164eb3acdd4e17b38aac5c4044cb6ff191e9e3956b128cbe74b349cd1ba')
+  _source_dir="Solitaire-${_commit}"
 fi
-sha256sums=('SKIP')
 
 pkgver() {
-  cd Solitaire
-  if [[ -f .solitaire-source-revision ]]; then
-    local revision
-    revision=$(<.solitaire-source-revision)
-    [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
-    printf '0.1.0.r0.g%s' "${revision:0:7}"
-    return
-  fi
-  printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" \
-    "$(git rev-parse --short=7 HEAD)"
+  local revision=${SOLITAIRE_EXPECTED_REVISION:-$_commit}
+  [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '0.1.0.r0.g%s' "${revision:0:7}"
 }
 
 prepare() {
-  cd Solitaire
-  local revision
-  if [[ -f .solitaire-source-revision ]]; then
-    revision=$(<.solitaire-source-revision)
-  else
-    revision=$(git rev-parse HEAD)
-    printf '%s\n' "$revision" > .solitaire-source-revision
-  fi
+  cd "$_source_dir"
+  local revision=${SOLITAIRE_EXPECTED_REVISION:-$_commit}
   [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
-  if [[ -n ${SOLITAIRE_EXPECTED_REVISION:-} ]]; then
-    [[ $revision == "$SOLITAIRE_EXPECTED_REVISION" ]]
+  if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
+    [[ -f .solitaire-source-revision ]] || return 1
+    [[ $(<.solitaire-source-revision) == "$revision" ]] || return 1
   fi
+  printf '%s\n' "$revision" > .solitaire-source-revision
 }
 
 build() {
-  cd Solitaire
+  cd "$_source_dir"
   cargo build --locked --release
 }
 
 check() {
-  cd Solitaire
+  cd "$_source_dir"
   cargo test --locked --all-targets --all-features
 }
 
 package() {
-  cd Solitaire
+  cd "$_source_dir"
   install -Dm755 target/release/solitaire "$pkgdir/usr/bin/solitaire"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 .solitaire-source-revision \

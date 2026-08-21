@@ -9,6 +9,8 @@ The repository contains:
 - A native Rust + Slint desktop game.
 - A small Omarchy Quattro `menu` plugin that launches the native game.
 
+The canonical evidence/status inventory is `docs/offline-capabilities.json`; its generated human-readable view is [docs/OFFLINE_CAPABILITIES.md](docs/OFFLINE_CAPABILITIES.md). It intentionally makes no precise parity score claim.
+
 ## Status
 
 M0 foundation and playable Slint surfaces for Klondike, Spider, and FreeCell are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell exposes deterministic numbered deals. Both surfaces route all pile interactions through their renderer-independent engines and include undo, redo, hints, replay-backed save/resume, adaptive columns, keyboard activation, accessible labels, and live status text.
@@ -30,7 +32,7 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Select a face-up card or complete run, then select a tableau column or foundation.
 - Select the stock to draw or recycle the waste.
 - Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
-- Card and empty-slot controls expose assistive-technology default actions, accept Tab focus plus Space/Enter activation, and announce status changes as a polite live region. Full gamepad navigation remains M5 work.
+- Card and empty-slot controls declare assistive-technology names/default actions, accept Tab focus plus Space/Enter activation, and declare status changes as a polite live region. These are implementation contracts, not real-platform acceptance evidence; screen-reader acceptance and full gamepad navigation remain M5 work.
 - Choose draw one or draw three before starting a new deal.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
@@ -41,7 +43,7 @@ Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `
 - In Spider, select a face-up card or same-suit run, then choose another column. Use the stock control to deal a row; every column must be occupied.
 - In FreeCell, select a card or alternating run, then choose a cascade, free cell, or suit foundation. Movable run size is derived from the available free cells and empty cascades.
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
-- Cards and empty destinations accept pointer activation, assistive-technology default actions, and Tab plus Space/Enter keyboard activation.
+- Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Real assistive-technology acceptance remains pending.
 
 ## Omarchy plugin
 
@@ -55,4 +57,3 @@ omarchy-shell shell summon io.github.rohan-patnaik.solitaire '{}'
 ## License
 
 MIT.
-

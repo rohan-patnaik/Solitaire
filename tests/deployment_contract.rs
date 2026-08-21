@@ -4,6 +4,8 @@ fn plugin_uses_detached_process_lifecycle() {
     assert!(plugin.contains("launcher.startDetached()"));
     assert!(!plugin.contains("launcher.running = true"));
     assert!(plugin.contains("native binary not found on PATH"));
+    assert!(plugin.contains("failed during startup"));
+    assert!(plugin.contains("exit $status"));
 }
 
 #[test]
@@ -11,6 +13,9 @@ fn arch_recipe_packages_the_expected_revision() {
     let recipe = include_str!("../packaging/arch/PKGBUILD");
     assert!(recipe.contains("SOLITAIRE_SOURCE_ARCHIVE"));
     assert!(recipe.contains("SOLITAIRE_EXPECTED_REVISION"));
+    assert!(recipe.contains("SOLITAIRE_SOURCE_SHA256"));
+    assert!(!recipe.contains("sha256sums=('SKIP')"));
+    assert!(recipe.contains("Solitaire/archive/${_commit}.tar.gz"));
     assert!(recipe.contains(".solitaire-source-revision"));
     assert!(recipe.contains("cargo test --locked --all-targets --all-features"));
     assert!(recipe.contains("$pkgdir/usr/share/$pkgname/source-revision"));
@@ -54,4 +59,15 @@ fn spider_and_freecell_surfaces_are_accessible_and_interactive() {
     }
     assert!(ui.contains("model: [\"1 suit\", \"2 suits\", \"4 suits\"]"));
     assert!(ui.contains("Open free cell"));
+}
+
+#[test]
+fn unsaved_changes_have_retry_and_close_warning_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    assert!(ui.contains("callback retry-save-requested"));
+    assert!(ui.contains("Retry saving changes kept in memory"));
+    assert!(ui.contains("Discard in-memory changes and reload the newer disk copy"));
+    assert!(controller.contains("CloseRequestResponse::KeepWindowShown"));
+    assert!(controller.contains("Unsaved changes remain"));
 }

@@ -10,26 +10,28 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-21
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Install Slint system dependencies
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-0
       - run: cargo fmt --all --check
+      - run: python3 scripts/generate_offline_capabilities.py --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test --all-targets --all-features
-      - run: cargo build --release
+      - run: cargo test --locked --all-targets --all-features
+      - run: cargo build --locked --release
   arch-package:
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    container: archlinux@sha256:4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
     timeout-minutes: 30
     steps:
       - name: Install package toolchain
         run: pacman -Syu --noconfirm --needed git base-devel cargo fontconfig wayland libxkbcommon
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build, test, and install exact-revision package
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -41,10 +43,12 @@ jobs:
             "$source_root/Solitaire/.solitaire-source-revision"
           source_archive="solitaire-source-$GITHUB_SHA.tar.gz"
           tar -C "$source_root" -czf "packaging/arch/$source_archive" Solitaire
+          source_sha256=$(sha256sum "packaging/arch/$source_archive" | cut -d' ' -f1)
           useradd --create-home package-builder
           chown -R package-builder:package-builder packaging/arch
           runuser -u package-builder -- env \
             SOLITAIRE_SOURCE_ARCHIVE="$source_archive" \
+            SOLITAIRE_SOURCE_SHA256="$source_sha256" \
             SOLITAIRE_EXPECTED_REVISION="$GITHUB_SHA" sh -c \
             'cd packaging/arch && makepkg --cleanbuild --clean --noconfirm'
           package_count=$(find packaging/arch -maxdepth 1 -type f \

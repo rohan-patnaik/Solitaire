@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "product": "Solitaire",
+  "evidence_revision": "deec66f09fa9d3afda9831f6cf258da3d660b873",
+  "evidence_ci": "https://github.com/rohan-patnaik/Solitaire/actions/runs/32308668110",
+  "current_tip_ci": null,
+  "status_definitions": {
+    "complete": "Workflow and required evidence are complete at a green exact revision.",
+    "partial": "Some implementation exists, but workflow or acceptance evidence remains open.",
+    "planned": "In scope and not implemented.",
+    "excluded": "Outside the offline product boundary, with a documented reason."
+  },
+  "capabilities": [
+    {"id":"foundation.omarchy-launcher","title":"Detached Omarchy launcher","status":"partial","paths":["Plugin.qml","tests/deployment_contract.rs"],"tests":["plugin_uses_detached_process_lifecycle"],"limits":"Real Omarchy acceptance is pending."},
+    {"id":"foundation.arch-package","title":"Exact-revision Arch package","status":"partial","paths":["packaging/arch/PKGBUILD",".github/workflows/ci.yml","tests/deployment_contract.rs"],"tests":["arch_recipe_packages_the_expected_revision","arch_ci_verifies_the_installed_revision"],"limits":"Requires exact-tip CI evidence after remediation."},
+    {"id":"foundation.persistence-safety","title":"Bounded atomic local persistence","status":"partial","paths":["src/persistence.rs"],"tests":["oversized_save_is_rejected_before_allocation","deeply_nested_json_is_rejected_by_explicit_limit","stale_writer_cannot_replace_a_newer_session_save","another_process_gets_bounded_busy_error_and_lock_releases_on_shutdown"],"limits":"Crash-injection and real-filesystem acceptance remain pending."},
+    {"id":"game.klondike","title":"Playable Klondike","status":"partial","paths":["src/klondike.rs","src/main.rs","ui/app.slint"],"tests":["autocomplete_does_not_strand_opposite_color_tableau_builders"],"limits":"Drag/drop, full options, win presentation, and platform acceptance remain open."},
+    {"id":"game.spider","title":"Playable Spider","status":"partial","paths":["src/spider.rs","src/main.rs","ui/app.slint"],"tests":["variants_have_104_cards_with_expected_suits"],"limits":"Broader hostile/property and platform evidence remain open."},
+    {"id":"game.freecell","title":"Playable FreeCell","status":"partial","paths":["src/freecell.rs","src/main.rs","ui/app.slint"],"tests":["seed_four_hint_covers_a_legal_destination","hint_can_recommend_a_multi_card_supermove"],"limits":"Solver-grade hints and platform acceptance remain open."},
+    {"id":"game.pyramid","title":"Playable Pyramid","status":"planned","paths":["src/pyramid.rs","ROADMAP.md"],"tests":[],"limits":"Renderer-independent engine exists; no playable surface."},
+    {"id":"game.tripeaks","title":"Playable TriPeaks","status":"planned","paths":["src/tripeaks.rs","ROADMAP.md"],"tests":[],"limits":"Renderer-independent engine exists; no playable surface."},
+    {"id":"collection.local-profile","title":"Local profiles, statistics, and achievements","status":"planned","paths":["ROADMAP.md"],"tests":[],"limits":"Not implemented."},
+    {"id":"quality.accessibility","title":"Keyboard and assistive-technology acceptance","status":"partial","paths":["ui/app.slint","README.md","ROADMAP.md"],"tests":["card_keyboard_controls_ignore_repeat_and_show_focus","spider_and_freecell_surfaces_are_accessible_and_interactive"],"limits":"Declared semantics exist; real screen-reader and keyboard-only acceptance is pending."},
+    {"id":"quality.real-omarchy","title":"Real Omarchy and Wayland acceptance","status":"planned","paths":["ROADMAP.md"],"tests":[],"limits":"No real-platform evidence has been recorded."},
+    {"id":"excluded.accounts","title":"Microsoft and Xbox accounts","status":"excluded","paths":["ROADMAP.md"],"tests":[],"limits":"Hosted identity is outside the offline product boundary."},
+    {"id":"excluded.ads","title":"Advertising services","status":"excluded","paths":["README.md","ROADMAP.md"],"tests":[],"limits":"The product is intentionally offline and ad-free."},
+    {"id":"excluded.vendor-content","title":"Microsoft-branded events and copied daily deals","status":"excluded","paths":["ROADMAP.md","assets/PROVENANCE.md"],"tests":[],"limits":"Vendor content and expressive presentation will not be copied."}
+  ]
+}

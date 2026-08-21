@@ -18,6 +18,7 @@ Functional parity is achievable for the five core games and common collection fe
 
 ### Current implementation evidence
 
+- `docs/offline-capabilities.json` is the canonical machine-readable status catalog; `docs/OFFLINE_CAPABILITIES.md` is generated and drift-checked. The catalog deliberately reports counts rather than a precise parity score.
 - M0 foundation is implemented and covered by CI, exact-revision Arch packaging checks, provenance records, and launcher contract tests.
 - Klondike has a playable vertical slice, but the remaining M1 product workflows below are not yet complete.
 - Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Real Omarchy visual and assistive-technology acceptance is still pending.
@@ -70,4 +71,3 @@ Every visual/audio asset must have a source, author, license, and creation recor
 ## Definition of done per feature
 
 Each rule variant requires deterministic tests, invalid-move tests, save/load and undo coverage, keyboard/touch behavior, accessibility labels, documentation, and a focused commit pushed after CI passes.
-
