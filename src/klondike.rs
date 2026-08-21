@@ -1,4 +1,4 @@
-use crate::cards::{Card, Rank, Suit, shuffle, standard_deck};
+use crate::cards::{Card, Color, Rank, Suit, shuffle, standard_deck};
 use crate::replay::Replay;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -260,6 +260,9 @@ impl Game {
     /// Returns [`MoveError`] when the requested action is illegal. The game is
     /// unchanged on error.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.actions.len() >= crate::replay::MAX_HISTORY_ACTIONS {
+            return Err(MoveError::ResourceLimit);
+        }
         let before = self.state.clone();
         if let Err(error) = self.apply_to_state(&action) {
             self.state = before;
@@ -325,15 +328,19 @@ impl Game {
     /// Returns an error if the replay identifies another game or contains an
     /// action that is illegal for the recorded options.
     pub fn from_replay(replay: &Replay<Action, ReplaySetup>) -> Result<Self, MoveError> {
-        replay
-            .validate_version()
+        crate::replay::validate_version(replay.version)
             .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
+        crate::replay::validate_action_count(replay.actions.len())
+            .map_err(|_| MoveError::ResourceLimit)?;
         if replay.game != "klondike" {
             return Err(MoveError::WrongGame);
         }
         replay.setup.validate()?;
         let mut game = Self::new(replay.seed, replay.setup.options);
-        for action in &replay.actions {
+        let deadline = crate::replay::Replay::<Action, ReplaySetup>::reconstruction_deadline();
+        for (step, action) in replay.actions.iter().enumerate() {
+            crate::replay::Replay::<Action, ReplaySetup>::check_reconstruction(deadline, step + 1)
+                .map_err(|_| MoveError::ResourceLimit)?;
             game.apply(action.clone())?;
         }
         game.state.elapsed_seconds = replay.setup.elapsed_seconds;
@@ -369,6 +376,11 @@ impl Game {
         }
         if self.redo.len() != self.redo_actions.len() {
             return Err(ValidationError::RedoActionCardinality);
+        }
+        if self.actions.len().saturating_add(self.redo_actions.len())
+            > crate::replay::MAX_HISTORY_ACTIONS
+        {
+            return Err(ValidationError::HistoryLimit);
         }
         for state in self.undo.iter().chain(&self.redo) {
             state.validate()?;
@@ -409,7 +421,7 @@ impl Game {
                     to: Pile::Foundation(card.card.suit),
                     count: 1,
                 };
-                if self.is_legal(&action) {
+                if self.is_legal(&action) && self.safe_for_foundation(card.card) {
                     return Some(action);
                 }
             }
@@ -464,7 +476,11 @@ impl Game {
             };
             self.state.waste.push(card);
         }
-        self.state.moves += 1;
+        self.state.moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         Ok(())
     }
 
@@ -483,8 +499,16 @@ impl Game {
             return Err(MoveError::RedealLimitReached);
         }
         self.state.stock.extend(self.state.waste.drain(..).rev());
-        self.state.redeals += 1;
-        self.state.moves += 1;
+        self.state.redeals = self
+            .state
+            .redeals
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
+        self.state.moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.state.score(-100, 0);
         Ok(())
     }
@@ -501,7 +525,11 @@ impl Game {
         if let Pile::Tableau(column) = from {
             self.state.flip_exposed(usize::from(column));
         }
-        self.state.moves += 1;
+        self.state.moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         Ok(())
     }
 
@@ -647,7 +675,7 @@ impl Game {
                     to: Pile::Foundation(card.card.suit),
                     count: 1,
                 };
-                if self.is_legal(&action) {
+                if self.is_legal(&action) && self.safe_for_foundation(card.card) {
                     return Some(action);
                 }
             }
@@ -658,7 +686,23 @@ impl Game {
                 to: Pile::Foundation(card.suit),
                 count: 1,
             };
-            self.is_legal(&action).then_some(action)
+            (self.is_legal(&action) && self.safe_for_foundation(*card)).then_some(action)
+        })
+    }
+
+    fn safe_for_foundation(&self, card: Card) -> bool {
+        let rank = card.rank.value();
+        if rank <= Rank::Two.value() {
+            return true;
+        }
+        let opposite = match card.color() {
+            Color::Red => [Suit::Clubs, Suit::Spades],
+            Color::Black => [Suit::Diamonds, Suit::Hearts],
+        };
+        opposite.into_iter().all(|suit| {
+            self.state.foundations[suit_index(suit)]
+                .last()
+                .is_some_and(|foundation| foundation.rank.value() >= rank - 1)
         })
     }
 
@@ -731,6 +775,8 @@ pub enum MoveError {
     WrongGame,
     UnsupportedReplayVersion(u16),
     InvalidReplaySetup,
+    ResourceLimit,
+    CounterOverflow,
 }
 
 impl std::fmt::Display for MoveError {
@@ -757,6 +803,7 @@ pub enum ValidationError {
     InvalidRedoTransition,
     IllegalHistoryAction,
     CurrentStateDoesNotMatchActions,
+    HistoryLimit,
 }
 
 impl std::fmt::Display for ValidationError {
@@ -803,6 +850,42 @@ mod tests {
             .chain(state.tableau.iter().flatten().map(|card| card.card))
             .collect::<HashSet<_>>();
         assert_eq!(cards.len(), 52);
+    }
+
+    #[test]
+    fn autocomplete_does_not_strand_opposite_color_tableau_builders() {
+        let mut game = empty_game(Options::default());
+        game.state.foundations[suit_index(Suit::Hearts)] =
+            vec![card(Suit::Hearts, Rank::Ace), card(Suit::Hearts, Rank::Two)];
+        game.state.tableau[0].push(TableauCard {
+            card: card(Suit::Hearts, Rank::Three),
+            face_up: true,
+        });
+        assert_eq!(game.autocomplete(), 0);
+
+        for suit in [Suit::Clubs, Suit::Spades] {
+            game.state.foundations[suit_index(suit)] =
+                vec![card(suit, Rank::Ace), card(suit, Rank::Two)];
+        }
+        assert_eq!(game.autocomplete(), 1);
+    }
+
+    #[test]
+    fn move_counter_overflow_is_rejected_atomically() {
+        let mut game = Game::new(10, Options::default());
+        game.state.moves = u32::MAX;
+        let before = game.state.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::CounterOverflow));
+        assert_eq!(game.state, before);
+    }
+
+    #[test]
+    fn bounded_history_rejects_an_additional_action_before_mutation() {
+        let mut game = Game::new(11, Options::default());
+        game.actions = vec![Action::Draw; crate::replay::MAX_HISTORY_ACTIONS];
+        let before = game.state.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::ResourceLimit));
+        assert_eq!(game.state, before);
     }
 
     #[test]

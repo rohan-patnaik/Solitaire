@@ -115,6 +115,9 @@ impl Game {
     ///
     /// Returns [`MoveError`] if the action violates Spider rules.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.actions.len() >= crate::replay::MAX_HISTORY_ACTIONS {
+            return Err(MoveError::ResourceLimit);
+        }
         let before = self.state.clone();
         let result = match action {
             Action::DealRow => self.deal_row(),
@@ -180,14 +183,18 @@ impl Game {
     ///
     /// Returns an error for the wrong game identifier or an illegal action.
     pub fn from_replay(replay: &Replay<Action, SuitMode>) -> Result<Self, MoveError> {
-        replay
-            .validate_version()
+        crate::replay::validate_version(replay.version)
             .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
+        crate::replay::validate_action_count(replay.actions.len())
+            .map_err(|_| MoveError::ResourceLimit)?;
         if replay.game != "spider" {
             return Err(MoveError::WrongGame);
         }
         let mut game = Self::new(replay.seed, replay.setup);
-        for action in &replay.actions {
+        let deadline = Replay::<Action, SuitMode>::reconstruction_deadline();
+        for (step, action) in replay.actions.iter().enumerate() {
+            Replay::<Action, SuitMode>::check_reconstruction(deadline, step + 1)
+                .map_err(|_| MoveError::ResourceLimit)?;
             game.apply(action.clone())?;
         }
         Ok(game)
@@ -236,7 +243,7 @@ impl Game {
                 face_up: true,
             });
         }
-        self.finish_action();
+        self.finish_action()?;
         Ok(())
     }
 
@@ -267,12 +274,16 @@ impl Game {
         let moved = self.state.columns[from].split_off(split);
         self.state.columns[to].extend(moved);
         self.flip_exposed(from);
-        self.finish_action();
+        self.finish_action()?;
         Ok(())
     }
 
-    fn finish_action(&mut self) {
-        self.state.moves += 1;
+    fn finish_action(&mut self) -> Result<(), MoveError> {
+        self.state.moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.state.score -= 1;
         for column in 0..COLUMN_COUNT {
             if complete_run(&self.state.columns[column]) {
@@ -283,6 +294,7 @@ impl Game {
                 self.flip_exposed(column);
             }
         }
+        Ok(())
     }
 
     fn flip_exposed(&mut self, column: usize) {
@@ -360,6 +372,8 @@ pub enum MoveError {
     InvalidDestination,
     WrongGame,
     UnsupportedReplayVersion(u16),
+    ResourceLimit,
+    CounterOverflow,
 }
 
 impl std::fmt::Display for MoveError {
@@ -404,6 +418,15 @@ mod tests {
                 assert_eq!(counts.get(&suit), Some(&count));
             }
         }
+    }
+
+    #[test]
+    fn move_counter_overflow_is_rejected_atomically() {
+        let mut game = Game::new(3, SuitMode::One);
+        game.state.moves = u32::MAX;
+        let before = game.state.clone();
+        assert_eq!(game.apply(Action::DealRow), Err(MoveError::CounterOverflow));
+        assert_eq!(game.state, before);
     }
 
     #[test]

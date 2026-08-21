@@ -101,6 +101,9 @@ impl Game {
     /// Returns [`MoveError`] if the source, destination, run, or supermove is
     /// illegal.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.actions.len() >= crate::replay::MAX_HISTORY_ACTIONS {
+            return Err(MoveError::ResourceLimit);
+        }
         let before = self.state.clone();
         if let Err(error) = self.apply_inner(action) {
             self.state = before;
@@ -162,14 +165,18 @@ impl Game {
     ///
     /// Returns an error for the wrong game identifier or an illegal action.
     pub fn from_replay(replay: &Replay<Action>) -> Result<Self, MoveError> {
-        replay
-            .validate_version()
+        crate::replay::validate_version(replay.version)
             .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
+        crate::replay::validate_action_count(replay.actions.len())
+            .map_err(|_| MoveError::ResourceLimit)?;
         if replay.game != "freecell" {
             return Err(MoveError::WrongGame);
         }
         let mut game = Self::new(replay.seed);
-        for action in &replay.actions {
+        let deadline = Replay::<Action>::reconstruction_deadline();
+        for (step, action) in replay.actions.iter().enumerate() {
+            Replay::<Action>::check_reconstruction(deadline, step + 1)
+                .map_err(|_| MoveError::ResourceLimit)?;
             game.apply(*action)?;
         }
         Ok(game)
@@ -203,8 +210,39 @@ impl Game {
         }
         for source in 0..CASCADE_COUNT {
             for destination in 0..CASCADE_COUNT {
+                for count in 1..=self.state.cascades[source].len() {
+                    let Ok(count) = u8::try_from(count) else {
+                        break;
+                    };
+                    let action = Action {
+                        from: Pile::Cascade(to_u8(source)),
+                        to: Pile::Cascade(to_u8(destination)),
+                        count,
+                    };
+                    if self.is_legal(action) {
+                        return Some(action);
+                    }
+                }
+            }
+        }
+        for cell in 0..4 {
+            if self.state.free_cells[cell].is_none() {
+                for source in 0..CASCADE_COUNT {
+                    let action = Action {
+                        from: Pile::Cascade(to_u8(source)),
+                        to: Pile::FreeCell(to_u8(cell)),
+                        count: 1,
+                    };
+                    if self.is_legal(action) {
+                        return Some(action);
+                    }
+                }
+            }
+        }
+        for cell in 0..4 {
+            for destination in 0..CASCADE_COUNT {
                 let action = Action {
-                    from: Pile::Cascade(to_u8(source)),
+                    from: Pile::FreeCell(to_u8(cell)),
                     to: Pile::Cascade(to_u8(destination)),
                     count: 1,
                 };
@@ -235,7 +273,11 @@ impl Game {
         self.validate_destination(action.to, &cards)?;
         self.remove(action.from, cards.len());
         self.add(action.to, &cards);
-        self.state.moves += 1;
+        self.state.moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         Ok(())
     }
 
@@ -378,6 +420,8 @@ pub enum MoveError {
     InvalidFoundation,
     WrongGame,
     UnsupportedReplayVersion(u16),
+    ResourceLimit,
+    CounterOverflow,
 }
 
 impl std::fmt::Display for MoveError {
@@ -419,6 +463,43 @@ mod tests {
             first.cascades[4..].iter().map(Vec::len).collect::<Vec<_>>(),
             [6; 4]
         );
+    }
+
+    #[test]
+    fn seed_four_hint_covers_a_legal_destination() {
+        let game = Game::new(4);
+        let hint = game.hint().expect("seed 4 has at least one legal move");
+        assert!(game.is_legal(hint));
+    }
+
+    #[test]
+    fn hint_can_recommend_a_multi_card_supermove() {
+        let mut game = empty_game();
+        game.state.free_cells = [
+            Some(card(Suit::Clubs, Rank::King)),
+            Some(card(Suit::Clubs, Rank::King)),
+            Some(card(Suit::Clubs, Rank::King)),
+            None,
+        ];
+        game.state.cascades = std::array::from_fn(|_| vec![card(Suit::Clubs, Rank::King)]);
+        game.state.cascades[0] = vec![
+            card(Suit::Hearts, Rank::Eight),
+            card(Suit::Clubs, Rank::Seven),
+        ];
+        game.state.cascades[1] = vec![card(Suit::Spades, Rank::Nine)];
+        let hint = game.hint().expect("the two-card run is movable");
+        assert_eq!(hint.count, 2);
+        assert!(game.is_legal(hint));
+    }
+
+    #[test]
+    fn move_counter_overflow_is_rejected_atomically() {
+        let mut game = Game::new(4);
+        let action = game.hint().expect("deal has a legal move");
+        game.state.moves = u32::MAX;
+        let before = game.state.clone();
+        assert_eq!(game.apply(action), Err(MoveError::CounterOverflow));
+        assert_eq!(game.state, before);
     }
 
     #[test]

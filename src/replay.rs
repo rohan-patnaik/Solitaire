@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::time::{Duration, Instant};
 
 pub const CURRENT_REPLAY_VERSION: u16 = 2;
+pub const MAX_REPLAY_ACTIONS: usize = 4_096;
+pub const MAX_HISTORY_ACTIONS: usize = 512;
+pub const MAX_RECONSTRUCTION_TIME: Duration = Duration::from_secs(2);
 
 /// A portable, versioned record of a deterministic game.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,8 +28,14 @@ impl<A, S> Replay<A, S> {
         }
     }
 
-    pub fn push(&mut self, action: A) {
+    /// Adds an action without exceeding the portable replay limit.
+    ///
+    /// # Errors
+    /// Returns [`ReplayError::TooManyActions`] at the limit.
+    pub fn push(&mut self, action: A) -> Result<(), ReplayError> {
+        validate_action_count(self.actions.len().saturating_add(1))?;
         self.actions.push(action);
+        Ok(())
     }
 
     /// Rejects typed replay values that bypassed JSON construction.
@@ -33,7 +43,27 @@ impl<A, S> Replay<A, S> {
     /// # Errors
     /// Returns [`ReplayError::UnsupportedVersion`] for any non-current version.
     pub fn validate_version(&self) -> Result<(), ReplayError> {
-        validate_version(self.version)
+        validate_version(self.version)?;
+        validate_action_count(self.actions.len())
+    }
+
+    #[must_use]
+    pub fn reconstruction_deadline() -> Instant {
+        Instant::now() + MAX_RECONSTRUCTION_TIME
+    }
+
+    /// Checks both reconstruction step and wall-clock budgets.
+    ///
+    /// # Errors
+    /// Returns a resource error when either budget is exceeded.
+    pub fn check_reconstruction(deadline: Instant, step: usize) -> Result<(), ReplayError> {
+        if step > MAX_REPLAY_ACTIONS {
+            return Err(ReplayError::TooManyActions(step));
+        }
+        if Instant::now() > deadline {
+            return Err(ReplayError::ReconstructionTimedOut);
+        }
+        Ok(())
     }
 }
 
@@ -62,6 +92,7 @@ impl<A: DeserializeOwned, S: DeserializeOwned> Replay<A, S> {
         let header: Header = serde_json::from_str(json)?;
         validate_version(header.version)?;
         let replay: Self = serde_json::from_str(json)?;
+        replay.validate_version()?;
         Ok(replay)
     }
 }
@@ -78,10 +109,24 @@ pub fn validate_version(version: u16) -> Result<(), ReplayError> {
     }
 }
 
+/// Validates the portable replay action-count limit.
+///
+/// # Errors
+/// Returns [`ReplayError::TooManyActions`] when `count` exceeds the limit.
+pub fn validate_action_count(count: usize) -> Result<(), ReplayError> {
+    if count <= MAX_REPLAY_ACTIONS {
+        Ok(())
+    } else {
+        Err(ReplayError::TooManyActions(count))
+    }
+}
+
 #[derive(Debug)]
 pub enum ReplayError {
     InvalidJson(serde_json::Error),
     UnsupportedVersion(u16),
+    TooManyActions(usize),
+    ReconstructionTimedOut,
 }
 
 impl From<serde_json::Error> for ReplayError {
@@ -97,6 +142,11 @@ impl std::fmt::Display for ReplayError {
             Self::UnsupportedVersion(version) => {
                 write!(formatter, "unsupported replay version {version}")
             }
+            Self::TooManyActions(count) => write!(
+                formatter,
+                "replay has {count} actions; limit is {MAX_REPLAY_ACTIONS}"
+            ),
+            Self::ReconstructionTimedOut => write!(formatter, "replay reconstruction timed out"),
         }
     }
 }
@@ -115,7 +165,7 @@ mod tests {
     #[test]
     fn replay_round_trips() {
         let mut replay = Replay::new("klondike", 7, "draw-one".to_owned());
-        replay.push(Action::Draw);
+        replay.push(Action::Draw).unwrap();
         let json = replay.to_json().unwrap();
         assert_eq!(Replay::from_json(&json).unwrap(), replay);
     }
@@ -132,5 +182,23 @@ mod tests {
         let json = r#"{"version":1,"game":"klondike","seed":7,"actions":[]}"#;
         let error = Replay::<Action, String>::from_json(json).unwrap_err();
         assert!(matches!(error, ReplayError::UnsupportedVersion(1)));
+    }
+
+    #[test]
+    fn reconstruction_checks_step_and_time_budgets() {
+        let past = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        assert!(matches!(
+            Replay::<Action>::check_reconstruction(past, 1),
+            Err(ReplayError::ReconstructionTimedOut)
+        ));
+        assert!(matches!(
+            Replay::<Action>::check_reconstruction(
+                Instant::now() + Duration::from_secs(1),
+                MAX_REPLAY_ACTIONS + 1
+            ),
+            Err(ReplayError::TooManyActions(_))
+        ));
     }
 }
