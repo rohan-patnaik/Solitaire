@@ -61,8 +61,26 @@ jobs:
           printf '%s\n' "$package_info"
           package_version=$(printf '%s\n' "$package_info" | \
             sed -n 's/^Version *: *//p')
+          mapfile -t release_fields < <(runuser -u package-builder -- env \
+            SOLITAIRE_SOURCE_ARCHIVE="$source_archive" \
+            SOLITAIRE_SOURCE_SHA256="$source_sha256" \
+            SOLITAIRE_EXPECTED_REVISION="$GITHUB_SHA" bash -c \
+            'cd packaging/arch && source PKGBUILD && printf "%s\n" \
+              "$_upstream_version" "$_release_revision_count" "$_commit" \
+              "$pkgver" "$pkgrel"')
+          test "${#release_fields[@]}" -eq 5
+          [[ ${release_fields[0]} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ ${release_fields[1]} =~ ^[0-9]+$ ]]
+          [[ ${release_fields[2]} =~ ^[0-9a-f]{40}$ ]]
+          [[ ${release_fields[3]} =~ ^[0-9]+\.[0-9]+\.[0-9]+\.r[0-9]+\.g[0-9a-f]{7}$ ]]
+          [[ ${release_fields[4]} =~ ^[1-9][0-9]*$ ]]
           short_sha=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
-          test "$package_version" = "0.1.0.r0.g$short_sha-2"
+          expected_pkgver="${release_fields[0]}.r${release_fields[1]}.g$short_sha"
+          expected_pkgrel=${release_fields[4]}
+          if [[ $expected_pkgver != "${release_fields[3]}" ]]; then
+            expected_pkgrel=1
+          fi
+          test "$package_version" = "$expected_pkgver-$expected_pkgrel"
           pacman -U --noconfirm "$package_path"
           test -x /usr/bin/solitaire
           test "$(cat /usr/share/solitaire-omarchy/source-revision)" = \

@@ -43,6 +43,10 @@ fn arch_ci_verifies_the_installed_revision() {
     assert!(workflow.contains("/usr/share/solitaire-omarchy/source-revision"));
     assert!(workflow.contains("pacman -Q solitaire-omarchy"));
     assert!(workflow.contains("bash packaging/arch/test-checksums.sh"));
+    assert!(workflow.contains("test \"${#release_fields[@]}\" -eq 5"));
+    assert!(workflow.contains("expected_pkgver"));
+    assert!(workflow.contains("expected_pkgrel=1"));
+    assert!(!workflow.contains("0.1.0.r0.g$short_sha-2"));
 }
 
 #[test]
