@@ -3,7 +3,6 @@ _upstream_version=0.1.0
 _release_revision_count=0
 _commit=df9f4f3cf4b49482f031ea5b890a117a31b93408
 _release_evidence_ci=https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489
-_release_archive_sha256=${SOLITAIRE_RELEASE_SHA256:-}
 pkgver=${_upstream_version}.r${_release_revision_count}.g${_commit::7}
 pkgrel=2
 pkgdesc="Original offline collection of classic patience games"
@@ -12,13 +11,26 @@ url="https://github.com/rohan-patnaik/Solitaire"
 license=('MIT')
 depends=('fontconfig' 'wayland' 'libxkbcommon')
 makedepends=('cargo' 'git')
+
+_normalize_sha256() {
+  local normalized=${1,,}
+  [[ $normalized =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s' "$normalized"
+}
+
 if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
-  : "${SOLITAIRE_SOURCE_SHA256:?SOLITAIRE_SOURCE_SHA256 is required for a local archive}"
+  if ! _source_sha256=$(_normalize_sha256 "${SOLITAIRE_SOURCE_SHA256:-}"); then
+    printf '%s\n' 'SOLITAIRE_SOURCE_SHA256 must be exactly 64 hexadecimal characters' >&2
+    return 1
+  fi
   source=("$SOLITAIRE_SOURCE_ARCHIVE")
-  sha256sums=("$SOLITAIRE_SOURCE_SHA256")
+  sha256sums=("$_source_sha256")
   _source_dir=Solitaire
 else
-  : "${_release_archive_sha256:?verified df9f4f3 release archive checksum is required}"
+  if ! _release_archive_sha256=$(_normalize_sha256 "${SOLITAIRE_RELEASE_SHA256:-}"); then
+    printf '%s\n' 'SOLITAIRE_RELEASE_SHA256 must be a verified 64-character hexadecimal digest' >&2
+    return 1
+  fi
   source=("Solitaire-${_commit}.tar.gz::https://github.com/rohan-patnaik/Solitaire/archive/${_commit}.tar.gz")
   sha256sums=("$_release_archive_sha256")
   _source_dir="Solitaire-${_commit}"

@@ -23,7 +23,12 @@ fn arch_recipe_packages_the_expected_revision() {
     assert!(recipe.contains("_commit=df9f4f3cf4b49482f031ea5b890a117a31b93408"));
     assert!(!recipe.contains("deec66f09fa9d3afda9831f6cf258da3d660b873"));
     assert!(recipe.contains("SOLITAIRE_RELEASE_SHA256"));
-    assert!(recipe.contains("verified df9f4f3 release archive checksum is required"));
+    assert!(recipe.contains("^[0-9a-f]{64}$"));
+    assert!(recipe.contains("${1,,}"));
+    let checksum_tests = include_str!("../packaging/arch/test-checksums.sh");
+    for invalid in ["''", "SKIP", "abc", "abcdef0", "z123"] {
+        assert!(checksum_tests.contains(invalid));
+    }
     let release = include_str!("../packaging/arch/release.json");
     assert!(release.contains("\"source_sha256\": null"));
     assert!(release.contains("blocked_pending_verified_archive_checksum"));
@@ -37,6 +42,7 @@ fn arch_ci_verifies_the_installed_revision() {
     assert!(workflow.contains("SOLITAIRE_EXPECTED_REVISION=\"$GITHUB_SHA\""));
     assert!(workflow.contains("/usr/share/solitaire-omarchy/source-revision"));
     assert!(workflow.contains("pacman -Q solitaire-omarchy"));
+    assert!(workflow.contains("bash packaging/arch/test-checksums.sh"));
 }
 
 #[test]

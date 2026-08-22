@@ -20,6 +20,7 @@ jobs:
       - name: Install Slint system dependencies
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-0
       - run: cargo fmt --all --check
+      - run: bash packaging/arch/test-checksums.sh
       - run: python3 scripts/generate_offline_capabilities.py --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
