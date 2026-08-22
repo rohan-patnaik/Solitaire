@@ -90,6 +90,7 @@ fn unsaved_changes_have_retry_and_close_warning_contracts() {
     assert!(ui.contains("callback discard-progress-and-start-requested"));
     assert!(ui.contains("callback cancel-new-deal-requested"));
     assert!(ui.contains("callback discard-and-close-requested"));
+    assert!(ui.contains("has-any-unsaved-changes"));
     assert!(ui.contains("Retry saving changes kept in memory"));
     assert!(ui.contains("Discard current unsaved progress and start the pending new deal"));
     assert!(ui.contains("Cancel the pending new deal and preserve the current game"));

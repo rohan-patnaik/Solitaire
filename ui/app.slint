@@ -127,6 +127,7 @@ export component AppWindow inherits Window {
     in property <bool> can-undo;
     in property <bool> can-redo;
     in property <bool> has-unsaved-changes;
+    in property <bool> has-any-unsaved-changes;
     in property <bool> has-pending-new-deal;
 
     callback select-game(string);
@@ -245,7 +246,7 @@ export component AppWindow inherits Window {
                 accessible-label: "Cancel the pending new deal and preserve the current game";
                 clicked => { root.cancel-new-deal-requested(); }
             }
-            if root.has-unsaved-changes: Button {
+            if root.has-any-unsaved-changes: Button {
                 text: "Discard and close";
                 accessible-label: "Discard all unsaved progress and close Solitaire";
                 clicked => { root.discard-and-close-requested(); }

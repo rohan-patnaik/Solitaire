@@ -991,6 +991,7 @@ fn render(app: &AppWindow, controller: &Controller) {
     app.set_can_undo(controller.can_undo());
     app.set_can_redo(controller.can_redo());
     app.set_has_unsaved_changes(controller.dirty[controller.active_index()]);
+    app.set_has_any_unsaved_changes(controller.dirty.iter().any(|dirty| *dirty));
     app.set_has_pending_new_deal(controller.pending_new_deal.is_some());
     app.set_status_text(controller.status.as_str().into());
     match controller.active {
