@@ -127,6 +127,7 @@ export component AppWindow inherits Window {
     in property <bool> can-undo;
     in property <bool> can-redo;
     in property <bool> has-unsaved-changes;
+    in property <bool> has-pending-new-deal;
 
     callback select-game(string);
     callback new-game(string);
@@ -144,6 +145,9 @@ export component AppWindow inherits Window {
     callback hint-requested;
     callback autocomplete-requested;
     callback retry-save-requested;
+    callback discard-progress-and-start-requested;
+    callback cancel-new-deal-requested;
+    callback discard-and-close-requested;
     callback reload-disk-requested;
     pure callback fan-spacing(int, float) -> float;
 
@@ -227,9 +231,24 @@ export component AppWindow inherits Window {
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
             Button {
                 text: "Retry save";
-                enabled: root.has-unsaved-changes;
+                enabled: root.has-unsaved-changes || root.has-pending-new-deal;
                 accessible-label: "Retry saving changes kept in memory";
                 clicked => { root.retry-save-requested(); }
+            }
+            if root.has-pending-new-deal: Button {
+                text: "Discard and start";
+                accessible-label: "Discard current unsaved progress and start the pending new deal";
+                clicked => { root.discard-progress-and-start-requested(); }
+            }
+            if root.has-pending-new-deal: Button {
+                text: "Cancel new deal";
+                accessible-label: "Cancel the pending new deal and preserve the current game";
+                clicked => { root.cancel-new-deal-requested(); }
+            }
+            if root.has-unsaved-changes: Button {
+                text: "Discard and close";
+                accessible-label: "Discard all unsaved progress and close Solitaire";
+                clicked => { root.discard-and-close-requested(); }
             }
             if root.game-kind == "Klondike": Button {
                 text: "Finish safe moves";

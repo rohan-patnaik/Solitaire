@@ -31,6 +31,17 @@ enum GameKind {
     FreeCell,
 }
 
+struct PendingNewDeal {
+    game: GameKind,
+    variant: String,
+}
+
+enum ProspectiveGame {
+    Klondike(Game),
+    Spider(SpiderGame),
+    FreeCell(FreeCellGame),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct SpiderSelection {
     column: u8,
@@ -73,6 +84,7 @@ struct Controller {
     freecell_save_path: Option<PathBuf>,
     save_revisions: [Option<SaveRevision>; 3],
     dirty: [bool; 3],
+    pending_new_deal: Option<PendingNewDeal>,
     deal_counters_path: Option<PathBuf>,
     next_seeds: DealCounters,
     status: String,
@@ -146,6 +158,7 @@ impl Controller {
             freecell_save_path,
             save_revisions,
             dirty: [false; 3],
+            pending_new_deal: None,
             deal_counters_path,
             next_seeds,
             status,
@@ -263,22 +276,45 @@ impl Controller {
         self.selection = None;
         self.spider_selection = None;
         self.freecell_selection = None;
+        self.pending_new_deal = None;
         self.status = format!("{} ready", self.game_name());
     }
 
     fn new_game(&mut self, variant: &str) {
-        let Some(seed) = self.take_next_seed() else {
-            self.status = "No further deal number is representable; existing game preserved".into();
+        let request = PendingNewDeal {
+            game: self.active,
+            variant: variant.to_owned(),
+        };
+        self.pending_new_deal = Some(request);
+        if self.dirty[self.active_index()] {
+            self.status = "This deal has unsaved progress. Retry save, discard it and start the new deal, or cancel.".into();
+            return;
+        }
+        self.commit_pending_new_deal();
+    }
+
+    fn commit_pending_new_deal(&mut self) {
+        let Some(request) = self.pending_new_deal.take() else {
+            self.status = "No new deal is waiting for confirmation".into();
             return;
         };
-        match self.active {
+        if request.game != self.active {
+            self.status = "The pending new deal was cancelled after switching games".into();
+            return;
+        }
+        let Some(seed) = self.take_next_seed(request.game) else {
+            self.status = "No further deal number is representable; existing game preserved".into();
+            self.pending_new_deal = Some(request);
+            return;
+        };
+        let candidate = match request.game {
             GameKind::Klondike => {
-                let draw_mode = if variant == "Draw 3" {
+                let draw_mode = if request.variant == "Draw 3" {
                     DrawMode::Three
                 } else {
                     DrawMode::One
                 };
-                self.game = Game::new(
+                ProspectiveGame::Klondike(Game::new(
                     seed,
                     Options {
                         draw_mode,
@@ -286,27 +322,56 @@ impl Controller {
                         max_redeals: None,
                         timed: false,
                     },
-                );
+                ))
             }
             GameKind::Spider => {
-                let mode = match variant {
+                let mode = match request.variant.as_str() {
                     "2 suits" => SuitMode::Two,
                     "4 suits" => SuitMode::Four,
                     _ => SuitMode::One,
                 };
-                self.spider = SpiderGame::new(seed, mode);
+                ProspectiveGame::Spider(SpiderGame::new(seed, mode))
             }
-            GameKind::FreeCell => self.freecell = FreeCellGame::new(seed),
+            GameKind::FreeCell => ProspectiveGame::FreeCell(FreeCellGame::new(seed)),
+        };
+        let index = self.active_index();
+        let saved = match &candidate {
+            ProspectiveGame::Klondike(game) => self.save_path.as_deref().map(|path| {
+                save_klondike_checked(path, game, &mut self.save_revisions[index])
+            }),
+            ProspectiveGame::Spider(game) => self.spider_save_path.as_deref().map(|path| {
+                save_spider_checked(path, game, &mut self.save_revisions[index])
+            }),
+            ProspectiveGame::FreeCell(game) => self.freecell_save_path.as_deref().map(|path| {
+                save_freecell_checked(path, game, &mut self.save_revisions[index])
+            }),
+        };
+        match saved {
+            Some(Ok(())) => {
+                match candidate {
+                    ProspectiveGame::Klondike(game) => self.game = game,
+                    ProspectiveGame::Spider(game) => self.spider = game,
+                    ProspectiveGame::FreeCell(game) => self.freecell = game,
+                }
+                self.dirty[index] = false;
+                self.clear_selections();
+                self.status = format!("New {} deal", self.game_name());
+            }
+            Some(Err(error)) => {
+                self.pending_new_deal = Some(request);
+                self.status = format!(
+                    "New deal was not started; the current game remains in memory because saving the prospective deal failed: {error}. Retry, discard, or cancel."
+                );
+            }
+            None => {
+                self.pending_new_deal = Some(request);
+                self.status = "New deal was not started; the current game remains in memory because no writable save location is available. Retry, discard, or cancel.".into();
+            }
         }
-        self.selection = None;
-        self.spider_selection = None;
-        self.freecell_selection = None;
-        self.status = format!("New {} deal", self.game_name());
-        self.persist_mutation();
     }
 
-    fn take_next_seed(&mut self) -> Option<u64> {
-        let kind = match self.active {
+    fn take_next_seed(&mut self, game: GameKind) -> Option<u64> {
+        let kind = match game {
             GameKind::Klondike => DealKind::Klondike,
             GameKind::Spider => DealKind::Spider,
             GameKind::FreeCell => DealKind::FreeCell,
@@ -323,13 +388,13 @@ impl Controller {
                 }
             }
         }
-        let seed = match self.active {
+        let seed = match game {
             GameKind::Klondike => self.next_seeds.klondike,
             GameKind::Spider => self.next_seeds.spider,
             GameKind::FreeCell => self.next_seeds.freecell,
         };
         let next = seed.checked_add(1)?;
-        match self.active {
+        match game {
             GameKind::Klondike => self.next_seeds.klondike = next,
             GameKind::Spider => self.next_seeds.spider = next,
             GameKind::FreeCell => self.next_seeds.freecell = next,
@@ -614,11 +679,34 @@ impl Controller {
     }
 
     fn retry_save(&mut self) {
-        if !self.dirty[self.active_index()] {
+        if self.pending_new_deal.is_some() {
+            if self.dirty[self.active_index()] && !self.save() {
+                return;
+            }
+            self.commit_pending_new_deal();
+        } else if !self.dirty[self.active_index()] {
             self.status = "No unsaved changes".into();
         } else if self.save() {
             self.status = "Changes saved".into();
         }
+    }
+
+    fn discard_progress_and_start_pending(&mut self) {
+        self.commit_pending_new_deal();
+    }
+
+    fn cancel_pending_new_deal(&mut self) {
+        if self.pending_new_deal.take().is_some() {
+            self.status = "New deal cancelled; current game preserved".into();
+        } else {
+            self.status = "No new deal is waiting for confirmation".into();
+        }
+    }
+
+    fn discard_unsaved_and_close(&mut self) {
+        self.pending_new_deal = None;
+        self.dirty = [false; 3];
+        self.status = "Unsaved progress discarded; closing".into();
     }
 
     fn reload_disk_copy(&mut self) {
@@ -848,6 +936,38 @@ fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller
     {
         let weak = app.as_weak();
         let controller = Rc::clone(&controller);
+        app.on_discard_progress_and_start_requested(move || {
+            update(
+                &weak,
+                &controller,
+                Controller::discard_progress_and_start_pending,
+            );
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_cancel_new_deal_requested(move || {
+            update(&weak, &controller, Controller::cancel_pending_new_deal);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_discard_and_close_requested(move || {
+            {
+                let mut controller = controller.borrow_mut();
+                controller.discard_unsaved_and_close();
+                if let Some(app) = weak.upgrade() {
+                    render(&app, &controller);
+                    let _ = app.hide();
+                }
+            }
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
         app.on_reload_disk_requested(move || {
             update(&weak, &controller, Controller::reload_disk_copy);
         });
@@ -871,6 +991,7 @@ fn render(app: &AppWindow, controller: &Controller) {
     app.set_can_undo(controller.can_undo());
     app.set_can_redo(controller.can_redo());
     app.set_has_unsaved_changes(controller.dirty[controller.active_index()]);
+    app.set_has_pending_new_deal(controller.pending_new_deal.is_some());
     app.set_status_text(controller.status.as_str().into());
     match controller.active {
         GameKind::Klondike => render_klondike(app, controller),
@@ -1288,6 +1409,19 @@ fn to_u8(value: usize) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn test_save(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "solitaire-controller-{}-{name}.json",
+            std::process::id()
+        ))
+    }
+
+    fn remove_save(path: &std::path::Path) {
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(path.with_extension("json.lock"));
+    }
 
     fn controller(seed: u64) -> Controller {
         Controller {
@@ -1303,6 +1437,7 @@ mod tests {
             freecell_save_path: None,
             save_revisions: [None; 3],
             dirty: [false; 3],
+            pending_new_deal: None,
             deal_counters_path: None,
             next_seeds: DealCounters {
                 klondike: seed.saturating_add(1),
@@ -1327,6 +1462,9 @@ mod tests {
     fn spider_surface_routes_variants_moves_and_history() {
         let mut controller = controller(41);
         controller.select_game("Spider");
+        let path = test_save("spider-surface");
+        remove_save(&path);
+        controller.spider_save_path = Some(path.clone());
         controller.new_game("2 suits");
         assert_eq!(controller.spider.state.mode, SuitMode::Two);
         assert_eq!(controller.spider.state.stock.len(), 50);
@@ -1347,6 +1485,7 @@ mod tests {
         assert!(controller.spider.can_redo());
         controller.redo();
         assert_eq!(controller.spider.state, moved);
+        remove_save(&path);
     }
 
     #[test]
@@ -1378,6 +1517,85 @@ mod tests {
         assert!(controller.status.contains("Unsaved changes remain"));
         controller.retry_save();
         assert!(controller.status.contains("Unsaved changes remain"));
+    }
+
+    #[test]
+    fn dirty_new_deal_requires_an_explicit_choice_and_no_path_preserves_state() {
+        let mut controller = controller(101);
+        controller.apply(Action::Draw);
+        let current = controller.game.clone();
+
+        controller.new_game("Draw 3");
+        assert_eq!(controller.game, current);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(controller.status.contains("Retry save"));
+
+        controller.discard_progress_and_start_pending();
+        assert_eq!(controller.game, current);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(controller.status.contains("no writable save location"));
+
+        controller.cancel_pending_new_deal();
+        assert_eq!(controller.game, current);
+        assert!(controller.pending_new_deal.is_none());
+        assert!(controller.dirty[0]);
+    }
+
+    #[test]
+    fn discard_stages_a_new_deal_until_the_prospective_save_succeeds() {
+        let path = test_save("discard-new-deal");
+        remove_save(&path);
+        let mut controller = controller(202);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        controller.dirty[0] = true;
+        let old_seed = controller.game.state.seed;
+
+        controller.new_game("Draw 3");
+        assert_eq!(controller.game.state.seed, old_seed);
+        controller.discard_progress_and_start_pending();
+
+        assert_ne!(controller.game.state.seed, old_seed);
+        assert_eq!(controller.game.state.options.draw_mode, DrawMode::Three);
+        assert!(!controller.dirty[0]);
+        assert!(controller.pending_new_deal.is_none());
+        let (saved, _) = load_klondike_revisioned(&path).unwrap();
+        assert_eq!(saved, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn retry_saves_dirty_progress_before_committing_the_pending_deal() {
+        let path = test_save("retry-new-deal");
+        remove_save(&path);
+        let mut controller = controller(303);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        controller.dirty[0] = true;
+        controller.new_game("Draw 1");
+
+        controller.retry_save();
+
+        assert!(controller.pending_new_deal.is_none());
+        assert!(!controller.dirty[0]);
+        assert_eq!(controller.game.state.seed, 304);
+        let (saved, _) = load_klondike_revisioned(&path).unwrap();
+        assert_eq!(saved, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn discard_and_close_explicitly_releases_the_close_guard() {
+        let mut controller = controller(404);
+        controller.dirty = [true; 3];
+        controller.new_game("Draw 1");
+        assert!(controller.pending_new_deal.is_some());
+
+        controller.discard_unsaved_and_close();
+
+        assert_eq!(controller.dirty, [false; 3]);
+        assert!(controller.pending_new_deal.is_none());
+        assert!(controller.status.contains("closing"));
     }
 
     fn to_i32(value: usize) -> i32 {
