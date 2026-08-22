@@ -129,6 +129,7 @@ export component AppWindow inherits Window {
     in property <int> completed-runs;
     in property <int> longest-column;
     in property <int> deal-id;
+    in property <string> deal-number;
     in property <string> status-text: "Ready";
     in property <bool> can-undo;
     in property <bool> can-redo;
@@ -200,7 +201,9 @@ export component AppWindow inherits Window {
                     ? "Score  " + root.score + "     Moves  " + root.moves + "     Runs  " + root.completed-runs + "/8"
                     : (root.game-kind == "FreeCell"
                         ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-id
-                        : "Score  " + root.score + "     Moves  " + root.moves);
+                        : (root.game-kind == "TriPeaks"
+                            ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number
+                            : "Score  " + root.score + "     Moves  " + root.moves));
                 color: #dce9e3;
                 font-size: 17px;
                 vertical-alignment: center;

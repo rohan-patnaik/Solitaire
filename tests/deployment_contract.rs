@@ -119,8 +119,9 @@ fn tripeaks_surface_declares_keyboard_and_accessibility_contracts() {
         );
     }
     assert!(controller.contains("tableau position {position}, exposed"));
-    assert!(controller.contains("tableau position {position}, covered"));
+    assert!(controller.contains("Tableau position {position}, covered, face-down"));
     assert!(controller.contains("Waste card, {}; activate to draw the next stock card"));
+    assert!(ui.contains("Deal  \" + root.deal-number"));
 }
 
 #[test]

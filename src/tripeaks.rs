@@ -119,6 +119,9 @@ impl Game {
     /// # Errors
     /// Returns [`MoveError`] for a covered or non-adjacent card, or empty stock.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.state.is_won() {
+            return Err(MoveError::GameComplete);
+        }
         if self.actions.len() >= crate::replay::MAX_REPLAY_ACTIONS {
             return Err(MoveError::ResourceLimit);
         }
@@ -205,6 +208,9 @@ impl Game {
 
     #[must_use]
     pub fn hint(&self) -> Option<Action> {
+        if self.state.is_won() {
+            return None;
+        }
         let waste = self.state.waste.last()?;
         (0..TABLEAU_SIZE)
             .find(|&index| {
@@ -287,6 +293,7 @@ pub enum MoveError {
     UnsupportedReplayVersion(u16),
     ResourceLimit,
     CounterOverflow,
+    GameComplete,
 }
 impl std::fmt::Display for MoveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -404,6 +411,16 @@ mod tests {
         game.state.tableau[27] = Some(card(Rank::Queen));
         game.state.waste = vec![card(Rank::Jack)];
         game.apply(Action::Remove(27)).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.hint(), None);
+
+        let complete = game.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::GameComplete));
+        assert_eq!(game.apply(Action::Remove(27)), Err(MoveError::GameComplete));
+        assert_eq!(game, complete);
+        assert!(game.undo());
+        assert!(!game.state.is_won());
+        assert!(game.redo());
         assert!(game.state.is_won());
     }
 

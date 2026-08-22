@@ -1263,6 +1263,7 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_tripeaks_cards(ModelRc::default());
     app.set_longest_column(longest_column(&state.tableau));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
+    app.set_deal_number(SharedString::default());
 }
 
 fn render_spider(app: &AppWindow, controller: &Controller) {
@@ -1299,6 +1300,7 @@ fn render_spider(app: &AppWindow, controller: &Controller) {
     app.set_completed_runs(i32::from(state.completed_runs));
     app.set_longest_column(longest_column(&state.columns));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
+    app.set_deal_number(SharedString::default());
 }
 
 fn render_freecell(app: &AppWindow, controller: &Controller) {
@@ -1379,6 +1381,7 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
     app.set_completed_runs(0);
     app.set_longest_column(longest_column(&state.cascades));
     app.set_deal_id(i32::try_from(state.deal_number).unwrap_or(i32::MAX));
+    app.set_deal_number(SharedString::default());
 }
 
 fn render_tripeaks(app: &AppWindow, controller: &Controller) {
@@ -1392,13 +1395,8 @@ fn render_tripeaks(app: &AppWindow, controller: &Controller) {
             let exposed = state.is_exposed(index);
             let card = card.unwrap_or(Card::new(Suit::Clubs, Rank::Ace));
             let position = index + 1;
-            let label = if exposed {
-                format!("{}, tableau position {position}, exposed", card_name(card))
-            } else {
-                format!("{}, tableau position {position}, covered", card_name(card))
-            };
             UiTriPeaksCard {
-                card: ui_card_labeled(card, label),
+                card: tripeaks_ui_card(card, exposed, position),
                 present,
             }
         })
@@ -1426,7 +1424,8 @@ fn render_tripeaks(app: &AppWindow, controller: &Controller) {
     app.set_moves(i32::try_from(state.moves).unwrap_or(i32::MAX));
     app.set_completed_runs(0);
     app.set_longest_column(0);
-    app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
+    app.set_deal_id(0);
+    app.set_deal_number(tripeaks_deal_number(state.seed));
 }
 
 fn longest_column<T, const N: usize>(columns: &[Vec<T>; N]) -> i32 {
@@ -1464,6 +1463,26 @@ fn ui_card_labeled(card: Card, accessible_label: String) -> UiCard {
         selected: false,
         accessible_label: accessible_label.into(),
     }
+}
+
+fn tripeaks_ui_card(card: Card, exposed: bool, position: usize) -> UiCard {
+    if exposed {
+        return ui_card_labeled(
+            card,
+            format!("{}, tableau position {position}, exposed", card_name(card)),
+        );
+    }
+    UiCard {
+        label: SharedString::default(),
+        red: false,
+        face_up: false,
+        selected: false,
+        accessible_label: format!("Tableau position {position}, covered, face-down").into(),
+    }
+}
+
+fn tripeaks_deal_number(seed: u64) -> SharedString {
+    seed.to_string().into()
 }
 
 fn empty_foundation(suit: Suit) -> UiCard {
@@ -1672,6 +1691,9 @@ fn friendly_tripeaks_error(error: tripeaks::MoveError) -> String {
         tripeaks::MoveError::CounterOverflow => {
             "This deal reached a numeric limit; the move was not applied".into()
         }
+        tripeaks::MoveError::GameComplete => {
+            "TriPeaks is complete; undo or start a new deal".into()
+        }
         _ => "That TriPeaks move is not available".into(),
     }
 }
@@ -1879,6 +1901,47 @@ mod tests {
         assert!(tripeaks_x(1, width) < tripeaks_x(2, width));
         assert!(tripeaks_x(18, width).abs() < f32::EPSILON);
         assert!((tripeaks_x(27, width) - (width - 104.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn tripeaks_card_model_hides_covered_identity_and_names_exposed_cards() {
+        let card = Card::new(Suit::Hearts, Rank::Queen);
+        let covered = tripeaks_ui_card(card, false, 4);
+        assert!(!covered.face_up);
+        assert!(!covered.red);
+        assert!(covered.label.is_empty());
+        assert_eq!(
+            covered.accessible_label.as_str(),
+            "Tableau position 4, covered, face-down"
+        );
+        assert!(!covered.accessible_label.contains("Queen"));
+        assert!(!covered.accessible_label.contains("Hearts"));
+
+        let exposed = tripeaks_ui_card(card, true, 19);
+        assert!(exposed.face_up);
+        assert_eq!(exposed.label.as_str(), "Q♥");
+        assert!(exposed.accessible_label.contains("Queen of hearts"));
+        assert!(exposed.accessible_label.contains("exposed"));
+    }
+
+    #[test]
+    fn tripeaks_deal_number_preserves_full_u64_seed() {
+        let seed = u64::from(u32::MAX) + 17;
+        assert_eq!(tripeaks_deal_number(seed).as_str(), seed.to_string());
+    }
+
+    #[test]
+    fn tripeaks_completion_error_is_actionable_and_preserves_state() {
+        let mut controller = controller(84);
+        controller.select_game("TriPeaks");
+        controller.tripeaks.state.tableau = [None; 28];
+        let complete = controller.tripeaks.clone();
+        controller.draw_tripeaks_stock();
+        assert_eq!(controller.tripeaks, complete);
+        assert_eq!(
+            controller.status,
+            "TriPeaks is complete; undo or start a new deal"
+        );
     }
 
     #[test]
