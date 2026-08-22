@@ -84,8 +84,8 @@ pub fn load_deal_counters(path: &Path) -> Result<DealCounters, SaveError> {
 }
 
 fn parse_deal_counters(bytes: &[u8]) -> Result<DealCounters, SaveError> {
-    validate_json_depth(&bytes)?;
-    let envelope: SaveEnvelope<DealCounters> = serde_json::from_slice(&bytes)?;
+    validate_json_depth(bytes)?;
+    let envelope: SaveEnvelope<DealCounters> = serde_json::from_slice(bytes)?;
     if envelope.version != CURRENT_SAVE_VERSION {
         return Err(SaveError::UnsupportedVersion(envelope.version));
     }
@@ -235,8 +235,8 @@ pub fn load_klondike(path: &Path) -> Result<Game, SaveError> {
 }
 
 fn parse_klondike(bytes: &[u8]) -> Result<Game, SaveError> {
-    validate_json_depth(&bytes)?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+    validate_json_depth(bytes)?;
+    let value: serde_json::Value = serde_json::from_slice(bytes)?;
     let game = if value.get("version").is_some() {
         let version = value
             .get("version")
@@ -393,7 +393,7 @@ pub fn recover_spider_revisioned(path: &Path) -> Result<RecoveredSave<spider::Ga
     recover_with_revision(path, parse_spider, || {}, sync_directory)
 }
 
-/// Loads or atomically quarantines a malformed FreeCell save under one bounded lock.
+/// Loads or atomically quarantines a malformed `FreeCell` save under one bounded lock.
 ///
 /// # Errors
 /// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
@@ -509,8 +509,8 @@ fn revision_for(bytes: &[u8]) -> SaveRevision {
 }
 
 fn parse_replay<T: DeserializeOwned>(bytes: &[u8], expected_game: &str) -> Result<T, SaveError> {
-    validate_json_depth(&bytes)?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+    validate_json_depth(bytes)?;
+    let value: serde_json::Value = serde_json::from_slice(bytes)?;
     let version = value
         .get("version")
         .and_then(serde_json::Value::as_u64)
