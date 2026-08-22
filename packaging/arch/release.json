@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "upstream_version": "0.1.0",
+  "release_revision_count": 0,
+  "pkgrel": 2,
+  "source_revision": "df9f4f3cf4b49482f031ea5b890a117a31b93408",
+  "source_archive": "https://github.com/rohan-patnaik/Solitaire/archive/df9f4f3cf4b49482f031ea5b890a117a31b93408.tar.gz",
+  "source_sha256": null,
+  "evidence_ci": "https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489",
+  "release_status": "blocked_pending_verified_archive_checksum"
+}

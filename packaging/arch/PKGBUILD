@@ -1,28 +1,33 @@
 pkgname=solitaire-omarchy
-pkgver=0.1.0.r0.g0000000
-pkgrel=1
+_upstream_version=0.1.0
+_release_revision_count=0
+_commit=df9f4f3cf4b49482f031ea5b890a117a31b93408
+_release_evidence_ci=https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489
+_release_archive_sha256=${SOLITAIRE_RELEASE_SHA256:-}
+pkgver=${_upstream_version}.r${_release_revision_count}.g${_commit::7}
+pkgrel=2
 pkgdesc="Original offline collection of classic patience games"
 arch=('x86_64')
 url="https://github.com/rohan-patnaik/Solitaire"
 license=('MIT')
 depends=('fontconfig' 'wayland' 'libxkbcommon')
 makedepends=('cargo' 'git')
-_commit=deec66f09fa9d3afda9831f6cf258da3d660b873
 if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
   : "${SOLITAIRE_SOURCE_SHA256:?SOLITAIRE_SOURCE_SHA256 is required for a local archive}"
   source=("$SOLITAIRE_SOURCE_ARCHIVE")
   sha256sums=("$SOLITAIRE_SOURCE_SHA256")
   _source_dir=Solitaire
 else
+  : "${_release_archive_sha256:?verified df9f4f3 release archive checksum is required}"
   source=("Solitaire-${_commit}.tar.gz::https://github.com/rohan-patnaik/Solitaire/archive/${_commit}.tar.gz")
-  sha256sums=('a9067164eb3acdd4e17b38aac5c4044cb6ff191e9e3956b128cbe74b349cd1ba')
+  sha256sums=("$_release_archive_sha256")
   _source_dir="Solitaire-${_commit}"
 fi
 
 pkgver() {
   local revision=${SOLITAIRE_EXPECTED_REVISION:-$_commit}
   [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
-  printf '0.1.0.r0.g%s' "${revision:0:7}"
+  printf '%s.r%s.g%s' "$_upstream_version" "$_release_revision_count" "${revision:0:7}"
 }
 
 prepare() {

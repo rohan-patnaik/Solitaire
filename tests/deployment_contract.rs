@@ -20,6 +20,14 @@ fn arch_recipe_packages_the_expected_revision() {
     assert!(recipe.contains("cargo test --locked --all-targets --all-features"));
     assert!(recipe.contains("$pkgdir/usr/share/$pkgname/source-revision"));
     assert!(!recipe.contains("_commit=49fda3a"));
+    assert!(recipe.contains("_commit=df9f4f3cf4b49482f031ea5b890a117a31b93408"));
+    assert!(!recipe.contains("deec66f09fa9d3afda9831f6cf258da3d660b873"));
+    assert!(recipe.contains("SOLITAIRE_RELEASE_SHA256"));
+    assert!(recipe.contains("verified df9f4f3 release archive checksum is required"));
+    let release = include_str!("../packaging/arch/release.json");
+    assert!(release.contains("\"source_sha256\": null"));
+    assert!(release.contains("blocked_pending_verified_archive_checksum"));
+    assert!(release.contains("actions/runs/32498442489"));
 }
 
 #[test]

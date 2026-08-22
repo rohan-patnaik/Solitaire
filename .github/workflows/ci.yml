@@ -61,7 +61,7 @@ jobs:
           package_version=$(printf '%s\n' "$package_info" | \
             sed -n 's/^Version *: *//p')
           short_sha=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
-          test "$package_version" = "0.1.0.r0.g$short_sha-1"
+          test "$package_version" = "0.1.0.r0.g$short_sha-2"
           pacman -U --noconfirm "$package_path"
           test -x /usr/bin/solitaire
           test "$(cat /usr/share/solitaire-omarchy/source-revision)" = \
