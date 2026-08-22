@@ -4,25 +4,25 @@ Generated from `docs/offline-capabilities.json`; do not edit by hand.
 No parity score is claimed. Statuses describe evidence, not UI presence.
 Baseline evidence revision: `df9f4f3cf4b49482f031ea5b890a117a31b93408`.
 Baseline CI: https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489.
-Pinned application-source CI: `dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc` at https://github.com/rohan-patnaik/Solitaire/actions/runs/32551758881 (success).
+Pinned application-source CI: `22e4d2434bfea8762309448e2f95d62f75c42d14` at https://github.com/rohan-patnaik/Solitaire/actions/runs/32570366866 (success).
 
 | Status | Count |
 | --- | ---: |
 | Complete | 0 |
-| Partial | 7 |
-| Planned | 4 |
+| Partial | 8 |
+| Planned | 3 |
 | Excluded | 3 |
 
 | ID | Capability | Status | Known limit |
 | --- | --- | --- | --- |
 | `foundation.omarchy-launcher` | Detached Omarchy launcher | Partial | Real Omarchy acceptance is pending. |
-| `foundation.arch-package` | Exact-revision Arch package | Partial | Green source and package CI is recorded for the pinned application revision; later metadata-only commits are not covered by that run. |
+| `foundation.arch-package` | Exact-revision Arch package | Partial | Rust and exact-revision Arch package CI is green at published baseline 22e4d2434bfea8762309448e2f95d62f75c42d14; the current TriPeaks slice requires its own exact-tip run after publication. |
 | `foundation.persistence-safety` | Bounded atomic local persistence | Partial | Real-filesystem and power-loss acceptance remain pending. |
 | `game.klondike` | Playable Klondike | Partial | Drag/drop, full options, win presentation, and platform acceptance remain open. |
 | `game.spider` | Playable Spider | Partial | Broader hostile/property and platform evidence remain open. |
 | `game.freecell` | Playable FreeCell | Partial | Solver-grade hints and platform acceptance remain open. |
 | `game.pyramid` | Playable Pyramid | Planned | Renderer-independent engine exists; no playable surface. |
-| `game.tripeaks` | Playable TriPeaks | Planned | Renderer-independent engine exists; no playable surface. |
+| `game.tripeaks` | Playable TriPeaks | Partial | Standard mode is playable with deterministic numbered deals, bounded replay/history, atomic local save/recovery, and declared keyboard/accessibility semantics; real Omarchy, keyboard-only, and assistive-technology acceptance remain pending. |
 | `collection.local-profile` | Local profiles, statistics, and achievements | Planned | Not implemented. |
 | `quality.accessibility` | Keyboard and assistive-technology acceptance | Partial | Declared semantics exist; real screen-reader and keyboard-only acceptance is pending. |
 | `quality.real-omarchy` | Real Omarchy and Wayland acceptance | Planned | No real-platform evidence has been recorded. |
