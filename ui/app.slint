@@ -139,6 +139,7 @@ export component AppWindow inherits Window {
     in property <int> redeals;
     in property <int> redeals-remaining;
     in property <string> status-text: "Ready";
+    in property <string> local-statistics: "Local: 0 played · 0 won";
     in property <bool> can-undo;
     in property <bool> can-redo;
     in property <bool> has-unsaved-changes;
@@ -271,6 +272,12 @@ export component AppWindow inherits Window {
             Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
             Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
+            Text {
+                text: root.local-statistics;
+                accessible-label: "Device-local statistics for the active game: " + root.local-statistics;
+                color: #dce9e3;
+                vertical-alignment: center;
+            }
             Button {
                 text: "Retry save";
                 enabled: root.has-unsaved-changes || root.has-pending-new-deal;

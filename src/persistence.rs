@@ -1,5 +1,6 @@
 use crate::freecell;
 use crate::klondike::{Game, ValidationError};
+use crate::profile::{LocalProfile, ProfileError};
 use crate::pyramid;
 use crate::replay::Replay;
 use crate::spider;
@@ -54,6 +55,78 @@ pub fn default_pyramid_save_path() -> Option<PathBuf> {
 #[must_use]
 pub fn default_deal_counters_path() -> Option<PathBuf> {
     default_named_save_path("deal-counters.json")
+}
+
+#[must_use]
+pub fn default_local_profile_path() -> Option<PathBuf> {
+    default_named_save_path("local-profile.json")
+}
+
+/// Atomically saves the bounded device-local profile.
+///
+/// # Errors
+/// Returns a typed validation, serialization, or I/O error.
+pub fn save_local_profile(path: &Path, profile: &LocalProfile) -> Result<(), SaveError> {
+    profile.validate()?;
+    let envelope = SaveEnvelope {
+        version: CURRENT_SAVE_VERSION,
+        game: "local-profile".into(),
+        payload: profile,
+    };
+    finish_namespace_write(
+        atomic_write(path, &bounded_json(&envelope)?)?,
+        "saving local profile",
+    )
+}
+
+/// Saves the device-local profile only when the on-disk revision still matches `expected`.
+///
+/// # Errors
+/// Returns a typed validation, stale ownership, serialization, or I/O error.
+pub fn save_local_profile_checked(
+    path: &Path,
+    profile: &LocalProfile,
+    expected: &mut Option<SaveRevision>,
+) -> Result<(), SaveError> {
+    profile.validate()?;
+    let envelope = SaveEnvelope {
+        version: CURRENT_SAVE_VERSION,
+        game: "local-profile".into(),
+        payload: profile,
+    };
+    compare_and_write(path, &bounded_json(&envelope)?, expected)
+}
+
+/// Loads and validates the device-local profile.
+///
+/// # Errors
+/// Returns a typed bounded-I/O, envelope, JSON, or profile-validation error.
+pub fn load_local_profile(path: &Path) -> Result<LocalProfile, SaveError> {
+    let bytes = read_bounded(path)?;
+    parse_local_profile(&bytes)
+}
+
+fn parse_local_profile(bytes: &[u8]) -> Result<LocalProfile, SaveError> {
+    validate_json_depth(bytes)?;
+    let envelope: SaveEnvelope<LocalProfile> = serde_json::from_slice(bytes)?;
+    if envelope.version != CURRENT_SAVE_VERSION {
+        return Err(SaveError::UnsupportedVersion(envelope.version));
+    }
+    if envelope.game != "local-profile" {
+        return Err(SaveError::WrongGame(envelope.game));
+    }
+    envelope.payload.validate()?;
+    Ok(envelope.payload)
+}
+
+/// Loads the local profile and its compare-and-replace revision under one bounded lock.
+///
+/// # Errors
+/// Returns a typed load or bounded-lock error.
+pub fn load_local_profile_revisioned(
+    path: &Path,
+) -> Result<(LocalProfile, SaveRevision), SaveError> {
+    load_with_revision(path, parse_local_profile)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -535,6 +608,16 @@ pub fn recover_pyramid_revisioned(path: &Path) -> Result<RecoveredSave<pyramid::
     recover_with_revision(path, parse_pyramid, || {}, sync_directory)
 }
 
+/// Loads or atomically quarantines a malformed local profile under one bounded lock.
+///
+/// # Errors
+/// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
+pub fn recover_local_profile_revisioned(
+    path: &Path,
+) -> Result<RecoveredSave<LocalProfile>, SaveError> {
+    recover_with_revision(path, parse_local_profile, || {}, sync_directory)
+}
+
 fn recover_with_revision<T>(
     path: &Path,
     parse: impl FnOnce(&[u8]) -> Result<T, SaveError>,
@@ -954,6 +1037,7 @@ pub enum SaveError {
     WrongGame(String),
     InvalidState(ValidationError),
     InvalidReplay(String),
+    InvalidProfile(ProfileError),
     TooLarge(u64),
     JsonTooDeep,
     CounterOverflow,
@@ -982,6 +1066,11 @@ impl From<ValidationError> for SaveError {
         Self::InvalidState(value)
     }
 }
+impl From<ProfileError> for SaveError {
+    fn from(value: ProfileError) -> Self {
+        Self::InvalidProfile(value)
+    }
+}
 impl SaveError {
     #[must_use]
     pub const fn committed_but_not_durable(&self) -> bool {
@@ -1002,6 +1091,7 @@ impl std::fmt::Display for SaveError {
             Self::WrongGame(game) => write!(f, "save contains unexpected game {game}"),
             Self::InvalidState(error) => error.fmt(f),
             Self::InvalidReplay(error) => write!(f, "saved replay is invalid: {error}"),
+            Self::InvalidProfile(error) => error.fmt(f),
             Self::TooLarge(size) => write!(f, "save is {size} bytes; limit is {MAX_SAVE_BYTES}"),
             Self::JsonTooDeep => write!(f, "save JSON nesting exceeds {MAX_JSON_DEPTH} levels"),
             Self::CounterOverflow => write!(f, "no further deal number is representable"),
@@ -1023,6 +1113,7 @@ mod tests {
     use super::*;
     use crate::freecell::{Action as FreeCellAction, Pile as FreeCellPile};
     use crate::klondike::Options;
+    use crate::profile::GameKind as ProfileGameKind;
     use crate::spider::SuitMode;
     use std::io::BufRead;
     use std::process::{Command, Stdio};
@@ -1091,6 +1182,98 @@ mod tests {
             }
         );
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn local_profile_reopens_equivalently_and_repeated_events_are_idempotent() {
+        let path = test_path("local-profile.json");
+        let mut profile = LocalProfile::default();
+        profile
+            .observe(ProfileGameKind::Klondike, 41, false)
+            .unwrap();
+        profile
+            .observe(ProfileGameKind::Klondike, 41, true)
+            .unwrap();
+        profile
+            .observe(ProfileGameKind::Klondike, 41, true)
+            .unwrap();
+        save_local_profile(&path, &profile).unwrap();
+
+        assert_eq!(load_local_profile(&path).unwrap(), profile);
+        assert_eq!(
+            profile.statistics(ProfileGameKind::Klondike).deals_played,
+            1
+        );
+        assert_eq!(profile.statistics(ProfileGameKind::Klondike).deals_won, 1);
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn stale_local_profile_writer_cannot_replace_newer_statistics() {
+        let path = test_path("local-profile-conflict.json");
+        save_local_profile(&path, &LocalProfile::default()).unwrap();
+        let (mut first, first_revision) = load_local_profile_revisioned(&path).unwrap();
+        let (mut stale, stale_revision) = load_local_profile_revisioned(&path).unwrap();
+        first.observe(ProfileGameKind::Spider, 10, false).unwrap();
+        let mut expected = Some(first_revision);
+        save_local_profile_checked(&path, &first, &mut expected).unwrap();
+        let committed = fs::read(&path).unwrap();
+
+        stale.observe(ProfileGameKind::Spider, 11, true).unwrap();
+        let stale_in_memory = stale.clone();
+        let mut stale_expected = Some(stale_revision);
+        assert!(matches!(
+            save_local_profile_checked(&path, &stale, &mut stale_expected),
+            Err(SaveError::Conflict { .. })
+        ));
+        assert_eq!(stale, stale_in_memory);
+        assert_eq!(fs::read(&path).unwrap(), committed);
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn invalid_local_profile_is_quarantined_without_losing_source_bytes() {
+        let path = test_path("local-profile-invalid.json");
+        let invalid = serde_json::json!({
+            "version": CURRENT_SAVE_VERSION,
+            "game": "local-profile",
+            "payload": {
+                "statistics": [
+                    {"deals_played": 0, "deals_won": 1,
+                     "latest_played_deal": null, "latest_won_deal": 1},
+                    {"deals_played": 0, "deals_won": 0,
+                     "latest_played_deal": null, "latest_won_deal": null},
+                    {"deals_played": 0, "deals_won": 0,
+                     "latest_played_deal": null, "latest_won_deal": null},
+                    {"deals_played": 0, "deals_won": 0,
+                     "latest_played_deal": null, "latest_won_deal": null},
+                    {"deals_played": 0, "deals_won": 0,
+                     "latest_played_deal": null, "latest_won_deal": null}
+                ]
+            }
+        });
+        let source = serde_json::to_vec(&invalid).unwrap();
+        atomic_write(&path, &source).unwrap();
+        assert!(matches!(
+            load_local_profile(&path),
+            Err(SaveError::InvalidProfile(ProfileError::WinsExceedPlayed))
+        ));
+
+        let RecoveredSave::Quarantined {
+            path: quarantined,
+            reason,
+            ..
+        } = recover_local_profile_revisioned(&path).unwrap()
+        else {
+            panic!("invalid local profile should be quarantined");
+        };
+        assert!(reason.contains("WinsExceedPlayed"));
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined).unwrap(), source);
+        fs::remove_file(quarantined).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
 
     #[test]

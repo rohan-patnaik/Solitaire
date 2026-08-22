@@ -4,6 +4,7 @@ pub mod cards;
 pub mod freecell;
 pub mod klondike;
 pub mod persistence;
+pub mod profile;
 pub mod pyramid;
 pub mod replay;
 pub mod spider;

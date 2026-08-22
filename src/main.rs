@@ -4,14 +4,17 @@ use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
     DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
-    default_deal_counters_path, default_freecell_save_path, default_pyramid_save_path,
-    default_save_path, default_spider_save_path, default_tripeaks_save_path, load_deal_counters,
-    load_freecell_revisioned, load_klondike_revisioned, load_pyramid_revisioned,
+    default_deal_counters_path, default_freecell_save_path, default_local_profile_path,
+    default_pyramid_save_path, default_save_path, default_spider_save_path,
+    default_tripeaks_save_path, load_deal_counters, load_freecell_revisioned,
+    load_klondike_revisioned, load_local_profile_revisioned, load_pyramid_revisioned,
     load_spider_revisioned, load_tripeaks_revisioned, recover_freecell_revisioned,
-    recover_klondike_revisioned, recover_pyramid_revisioned, recover_spider_revisioned,
-    recover_tripeaks_revisioned, reserve_deal, save_freecell_checked, save_klondike_checked,
-    save_pyramid_checked, save_spider_checked, save_tripeaks_checked,
+    recover_klondike_revisioned, recover_local_profile_revisioned, recover_pyramid_revisioned,
+    recover_spider_revisioned, recover_tripeaks_revisioned, reserve_deal, save_freecell_checked,
+    save_klondike_checked, save_local_profile_checked, save_pyramid_checked, save_spider_checked,
+    save_tripeaks_checked,
 };
+use solitaire::profile::{GameKind as ProfileGameKind, LocalProfile};
 use solitaire::pyramid::{self, Game as PyramidGame};
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use solitaire::tripeaks::{self, Game as TriPeaksGame};
@@ -102,6 +105,10 @@ struct Controller {
     pending_new_deal_conflict: bool,
     deal_counters_path: Option<PathBuf>,
     next_seeds: DealCounters,
+    local_profile: LocalProfile,
+    local_profile_path: Option<PathBuf>,
+    local_profile_revision: Option<SaveRevision>,
+    local_profile_dirty: bool,
     status: String,
 }
 
@@ -162,20 +169,10 @@ impl Controller {
             tripeaks: tripeaks.state.seed.saturating_add(1),
             pyramid: pyramid.state.seed.saturating_add(1),
         };
-        let mut next_seeds = deal_counters_path
-            .as_deref()
-            .and_then(|path| match load_deal_counters(path) {
-                Ok(counters) => Some(counters),
-                Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
-                Err(error) => {
-                    status = format!(
-                        "Deal counters could not be restored; current game seeds were used: {error}"
-                    );
-                    None
-                }
-            })
-            .unwrap_or(defaults);
-        raise_deal_counters(&mut next_seeds, defaults);
+        let next_seeds =
+            load_initial_deal_counters(deal_counters_path.as_deref(), defaults, &mut status);
+        let (local_profile, local_profile_path, local_profile_revision) =
+            load_initial_local_profile(&mut status);
         let save_revisions = [
             klondike_revision,
             spider_revision,
@@ -205,6 +202,10 @@ impl Controller {
             pending_new_deal_conflict: false,
             deal_counters_path,
             next_seeds,
+            local_profile,
+            local_profile_path,
+            local_profile_revision,
+            local_profile_dirty: false,
             status,
         }
     }
@@ -335,8 +336,8 @@ impl Controller {
         };
         self.pending_new_deal = Some(request);
         self.pending_new_deal_conflict = false;
-        if self.dirty[self.active_index()] {
-            self.status = "This deal has unsaved progress. Retry save, discard it and start the new deal, or cancel.".into();
+        if self.dirty[self.active_index()] || self.local_profile_dirty {
+            self.status = "This deal or its local statistics have unsaved progress. Retry save before starting a new deal, or cancel.".into();
             return;
         }
         self.commit_pending_new_deal();
@@ -542,6 +543,93 @@ impl Controller {
         let index = self.active_index();
         self.dirty[index] = true;
         let _ = self.save();
+        self.observe_active_profile();
+    }
+
+    fn observe_active_profile(&mut self) {
+        if self.local_profile_path.is_none() {
+            return;
+        }
+        let mut candidate = self.local_profile.clone();
+        let observed = candidate.observe(
+            self.profile_game_kind(),
+            self.active_deal_number(),
+            self.active_game_is_won(),
+        );
+        match observed {
+            Ok(false) => {}
+            Ok(true) => {
+                self.local_profile = candidate;
+                self.local_profile_dirty = true;
+                let _ = self.save_local_profile();
+            }
+            Err(error) => {
+                self.status = format!(
+                    "Local statistics were not changed because the observation was rejected: {error}"
+                );
+            }
+        }
+    }
+
+    fn save_local_profile(&mut self) -> bool {
+        let result = self.local_profile_path.as_deref().map(|path| {
+            save_local_profile_checked(path, &self.local_profile, &mut self.local_profile_revision)
+        });
+        match result {
+            Some(Ok(())) => {
+                self.local_profile_dirty = false;
+                true
+            }
+            Some(Err(error)) if error.committed_but_not_durable() => {
+                self.local_profile_dirty = true;
+                self.status = format!(
+                    "Local statistics reached the on-disk profile, but durability is indeterminate: {error}"
+                );
+                false
+            }
+            Some(Err(error)) => {
+                self.local_profile_dirty = true;
+                self.status = format!(
+                    "Local statistics remain in memory; profile save failed: {error}. Retry before closing."
+                );
+                false
+            }
+            None => {
+                self.local_profile_dirty = true;
+                self.status = "Local statistics remain in memory; no writable profile location is available. Retry before closing.".into();
+                false
+            }
+        }
+    }
+
+    const fn profile_game_kind(&self) -> ProfileGameKind {
+        match self.active {
+            GameKind::Klondike => ProfileGameKind::Klondike,
+            GameKind::Spider => ProfileGameKind::Spider,
+            GameKind::FreeCell => ProfileGameKind::FreeCell,
+            GameKind::TriPeaks => ProfileGameKind::TriPeaks,
+            GameKind::Pyramid => ProfileGameKind::Pyramid,
+        }
+    }
+
+    fn active_deal_number(&self) -> u64 {
+        match self.active {
+            GameKind::Klondike => self.game.state.seed,
+            GameKind::Spider => self.spider.state.seed,
+            GameKind::FreeCell => self.freecell.state.deal_number,
+            GameKind::TriPeaks => self.tripeaks.state.seed,
+            GameKind::Pyramid => self.pyramid.state.seed,
+        }
+    }
+
+    fn active_game_is_won(&self) -> bool {
+        match self.active {
+            GameKind::Klondike => self.game.state.is_won(),
+            GameKind::Spider => self.spider.state.is_won(),
+            GameKind::FreeCell => self.freecell.state.is_won(),
+            GameKind::TriPeaks => self.tripeaks.state.is_won(),
+            GameKind::Pyramid => self.pyramid.state.is_won(),
+        }
     }
 
     const fn active_index(&self) -> usize {
@@ -884,19 +972,30 @@ impl Controller {
     }
 
     fn retry_save(&mut self) {
+        let game_was_dirty = self.dirty[self.active_index()];
+        let profile_was_dirty = self.local_profile_dirty;
+        if game_was_dirty && !self.save() {
+            return;
+        }
+        if profile_was_dirty && !self.save_local_profile() {
+            return;
+        }
         if self.pending_new_deal.is_some() {
-            if self.dirty[self.active_index()] && !self.save() {
-                return;
-            }
             self.commit_pending_new_deal();
-        } else if !self.dirty[self.active_index()] {
+        } else if !game_was_dirty && !profile_was_dirty {
             self.status = "No unsaved changes".into();
-        } else if self.save() {
+        } else {
             self.status = "Changes saved".into();
         }
     }
 
     fn discard_progress_and_start_pending(&mut self) {
+        if self.local_profile_dirty {
+            self.status =
+                "Local statistics remain unsaved; retry their save before starting a new deal"
+                    .into();
+            return;
+        }
         self.commit_pending_new_deal();
     }
 
@@ -949,60 +1048,98 @@ impl Controller {
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
         self.dirty = [false; 5];
-        self.status = "Unsaved progress discarded; closing".into();
+        self.local_profile_dirty = false;
+        self.status = "Unsaved progress and local statistics discarded; closing".into();
     }
 
     fn reload_disk_copy(&mut self) {
-        let result = match self.active {
-            GameKind::Klondike => self.save_path.clone().map(|path| {
-                load_klondike_revisioned(&path).map(|(game, revision)| {
-                    self.game = game;
-                    revision
+        let index = self.active_index();
+        let reload_game = self.dirty[index] || self.pending_new_deal_conflict;
+        let reload_profile = self.local_profile_dirty;
+        let game_result = reload_game.then(|| match self.active {
+            GameKind::Klondike => self
+                .save_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no Klondike save path")
+                        .into()
                 })
-            }),
-            GameKind::Spider => self.spider_save_path.clone().map(|path| {
-                load_spider_revisioned(&path).map(|(game, revision)| {
-                    self.spider = game;
-                    revision
+                .and_then(load_klondike_revisioned)
+                .map(|(game, revision)| (ProspectiveGame::Klondike(game), revision)),
+            GameKind::Spider => self
+                .spider_save_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no Spider save path").into()
                 })
-            }),
-            GameKind::FreeCell => self.freecell_save_path.clone().map(|path| {
-                load_freecell_revisioned(&path).map(|(game, revision)| {
-                    self.freecell = game;
-                    revision
+                .and_then(load_spider_revisioned)
+                .map(|(game, revision)| (ProspectiveGame::Spider(game), revision)),
+            GameKind::FreeCell => self
+                .freecell_save_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no FreeCell save path")
+                        .into()
                 })
-            }),
-            GameKind::TriPeaks => self.tripeaks_save_path.clone().map(|path| {
-                load_tripeaks_revisioned(&path).map(|(game, revision)| {
-                    self.tripeaks = game;
-                    revision
+                .and_then(load_freecell_revisioned)
+                .map(|(game, revision)| (ProspectiveGame::FreeCell(game), revision)),
+            GameKind::TriPeaks => self
+                .tripeaks_save_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no TriPeaks save path")
+                        .into()
                 })
-            }),
-            GameKind::Pyramid => self.pyramid_save_path.clone().map(|path| {
-                load_pyramid_revisioned(&path).map(|(game, revision)| {
-                    self.pyramid = game;
-                    revision
+                .and_then(load_tripeaks_revisioned)
+                .map(|(game, revision)| (ProspectiveGame::TriPeaks(game), revision)),
+            GameKind::Pyramid => self
+                .pyramid_save_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no Pyramid save path").into()
                 })
-            }),
-        };
-        match result {
-            Some(Ok(revision)) => {
-                let index = self.active_index();
-                self.save_revisions[index] = Some(revision);
-                self.dirty[index] = false;
-                self.pending_new_deal_conflict = false;
-                self.clear_selections();
-                self.status = if self.pending_new_deal.is_some() {
-                    "Reloaded the newer disk copy and refreshed save ownership; retry or cancel the pending new deal".into()
-                } else {
-                    "Reloaded the newer disk copy; in-memory changes were discarded".into()
-                };
-            }
-            Some(Err(error)) => {
-                self.status =
-                    format!("Could not reload the disk copy; in-memory changes remain: {error}");
-            }
-            None => self.status = "No save path is available; in-memory changes remain".into(),
+                .and_then(load_pyramid_revisioned)
+                .map(|(game, revision)| (ProspectiveGame::Pyramid(game), revision)),
+        });
+        let profile_result = reload_profile.then(|| {
+            self.local_profile_path
+                .as_deref()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "no local profile path")
+                        .into()
+                })
+                .and_then(load_local_profile_revisioned)
+        });
+        if let Some(Err(error)) = game_result.as_ref() {
+            self.status =
+                format!("Could not reload the disk copy; in-memory changes remain: {error}");
+            return;
+        }
+        if let Some(Err(error)) = profile_result.as_ref() {
+            self.status =
+                format!("Could not reload the local profile; in-memory statistics remain: {error}");
+            return;
+        }
+        if let Some(Ok((game, revision))) = game_result {
+            self.replace_game(game);
+            self.save_revisions[index] = Some(revision);
+            self.dirty[index] = false;
+            self.pending_new_deal_conflict = false;
+            self.clear_selections();
+        }
+        if let Some(Ok((profile, revision))) = profile_result {
+            self.local_profile = profile;
+            self.local_profile_revision = Some(revision);
+            self.local_profile_dirty = false;
+        }
+        if reload_game || reload_profile {
+            self.status = if self.pending_new_deal.is_some() {
+                "Reloaded newer disk state and refreshed save ownership; retry or cancel the pending new deal".into()
+            } else {
+                "Reloaded newer disk state; in-memory changes were discarded".into()
+            };
+        } else {
+            self.status = "No unsaved disk state needs reloading".into();
         }
     }
 }
@@ -1023,6 +1160,70 @@ fn load_initial_pyramid(
             |(game, revision)| (game, Some(revision)),
         );
     (game, path, revision)
+}
+
+fn load_initial_local_profile(
+    status: &mut String,
+) -> (LocalProfile, Option<PathBuf>, Option<SaveRevision>) {
+    let mut path = default_local_profile_path();
+    let Some(profile_path) = path.clone() else {
+        return (LocalProfile::default(), None, None);
+    };
+    match recover_local_profile_revisioned(&profile_path) {
+        Ok(RecoveredSave::Loaded(profile, revision)) => (profile, path, Some(revision)),
+        Ok(RecoveredSave::Quarantined {
+            path: quarantined,
+            reason,
+            durability_warning,
+        }) => {
+            *status = durability_warning.map_or_else(
+                || {
+                    format!(
+                        "Unreadable local profile preserved as {}; started empty local statistics ({reason})",
+                        quarantined.display()
+                    )
+                },
+                |warning| {
+                    format!(
+                        "Unreadable local profile moved to {}; directory durability is indeterminate ({warning}); started empty local statistics ({reason})",
+                        quarantined.display()
+                    )
+                },
+            );
+            (LocalProfile::default(), path, None)
+        }
+        Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            (LocalProfile::default(), path, None)
+        }
+        Err(error) => {
+            *status = format!(
+                "Local profile recovery failed; original left untouched and statistics disabled ({error})"
+            );
+            path = None;
+            (LocalProfile::default(), path, None)
+        }
+    }
+}
+
+fn load_initial_deal_counters(
+    path: Option<&std::path::Path>,
+    defaults: DealCounters,
+    status: &mut String,
+) -> DealCounters {
+    let mut counters = path
+        .and_then(|path| match load_deal_counters(path) {
+            Ok(counters) => Some(counters),
+            Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                *status = format!(
+                    "Deal counters could not be restored; current game seeds were used: {error}"
+                );
+                None
+            }
+        })
+        .unwrap_or(defaults);
+    raise_deal_counters(&mut counters, defaults);
+    counters
 }
 
 fn raise_deal_counters(counters: &mut DealCounters, minimum: DealCounters) {
@@ -1083,7 +1284,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let controller = Rc::clone(&controller);
         app.window().on_close_requested(move || {
             let mut controller = controller.borrow_mut();
-            if controller.dirty.iter().any(|dirty| *dirty) {
+            if controller.dirty.iter().any(|dirty| *dirty) || controller.local_profile_dirty {
                 controller.status =
                     "Unsaved changes remain. Retry save before closing the application.".into();
                 if let Some(app) = weak.upgrade() {
@@ -1337,11 +1538,25 @@ fn render(app: &AppWindow, controller: &Controller) {
     app.set_game_kind(controller.game_name().into());
     app.set_can_undo(controller.can_undo());
     app.set_can_redo(controller.can_redo());
-    app.set_has_unsaved_changes(controller.dirty[controller.active_index()]);
-    app.set_has_any_unsaved_changes(controller.dirty.iter().any(|dirty| *dirty));
+    app.set_has_unsaved_changes(
+        controller.dirty[controller.active_index()] || controller.local_profile_dirty,
+    );
+    app.set_has_any_unsaved_changes(
+        controller.dirty.iter().any(|dirty| *dirty) || controller.local_profile_dirty,
+    );
     app.set_has_pending_new_deal(controller.pending_new_deal.is_some());
     app.set_has_pending_save_conflict(controller.pending_new_deal_conflict);
     app.set_status_text(controller.status.as_str().into());
+    let statistics = controller
+        .local_profile
+        .statistics(controller.profile_game_kind());
+    app.set_local_statistics(
+        format!(
+            "Local: {} played · {} won",
+            statistics.deals_played, statistics.deals_won
+        )
+        .into(),
+    );
     match controller.active {
         GameKind::Klondike => render_klondike(app, controller),
         GameKind::Spider => render_spider(app, controller),
@@ -2112,8 +2327,108 @@ mod tests {
                 tripeaks: seed.saturating_add(1),
                 pyramid: seed.saturating_add(1),
             },
+            local_profile: LocalProfile::default(),
+            local_profile_path: None,
+            local_profile_revision: None,
+            local_profile_dirty: false,
             status: "Ready".into(),
         }
+    }
+
+    #[test]
+    fn controller_records_and_reopens_one_played_deal_idempotently() {
+        let game_path = test_save("profile-played-game");
+        let profile_path = test_save("profile-played");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        let mut controller = controller(41);
+        controller.save_path = Some(game_path.clone());
+        controller.local_profile_path = Some(profile_path.clone());
+
+        controller.draw_or_recycle();
+        controller.undo();
+        controller.redo();
+
+        let statistics = controller
+            .local_profile
+            .statistics(ProfileGameKind::Klondike);
+        assert_eq!(statistics.deals_played, 1);
+        assert_eq!(statistics.deals_won, 0);
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(
+            solitaire::persistence::load_local_profile(&profile_path).unwrap(),
+            controller.local_profile
+        );
+        remove_save(&game_path);
+        remove_save(&profile_path);
+    }
+
+    #[test]
+    fn controller_records_a_win_once_across_undo_and_redo() {
+        let profile_path = test_save("profile-win");
+        remove_save(&profile_path);
+        let mut controller = controller(7);
+        controller.active = GameKind::Pyramid;
+        controller.local_profile_path = Some(profile_path.clone());
+        controller.pyramid.state.pyramid = [None; 28];
+        controller.pyramid.state.pyramid[27] = Some(Card::new(Suit::Spades, Rank::King));
+
+        controller.activate_pyramid_card(27);
+        controller.undo();
+        controller.redo();
+
+        let statistics = controller
+            .local_profile
+            .statistics(ProfileGameKind::Pyramid);
+        assert_eq!(statistics.deals_played, 1);
+        assert_eq!(statistics.deals_won, 1);
+        assert!(!controller.local_profile_dirty);
+        remove_save(&profile_path);
+    }
+
+    #[test]
+    fn local_profile_conflict_preserves_memory_until_explicit_reload() {
+        let game_path = test_save("profile-conflict-game");
+        let profile_path = test_save("profile-conflict");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        solitaire::persistence::save_local_profile(&profile_path, &LocalProfile::default())
+            .unwrap();
+        let (loaded, revision) = load_local_profile_revisioned(&profile_path).unwrap();
+        let (mut external, external_revision) =
+            load_local_profile_revisioned(&profile_path).unwrap();
+        external
+            .observe(ProfileGameKind::Klondike, 42, false)
+            .unwrap();
+        let mut external_expected = Some(external_revision);
+        save_local_profile_checked(&profile_path, &external, &mut external_expected).unwrap();
+
+        let mut controller = controller(41);
+        controller.save_path = Some(game_path.clone());
+        controller.local_profile = loaded;
+        controller.local_profile_path = Some(profile_path.clone());
+        controller.local_profile_revision = Some(revision);
+        controller.draw_or_recycle();
+
+        assert!(controller.local_profile_dirty);
+        assert!(controller.status.contains("profile save failed"));
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::Klondike)
+                .latest_played_deal,
+            Some(41)
+        );
+        assert_eq!(
+            solitaire::persistence::load_local_profile(&profile_path).unwrap(),
+            external
+        );
+
+        controller.reload_disk_copy();
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(controller.local_profile, external);
+        remove_save(&game_path);
+        remove_save(&profile_path);
     }
 
     #[test]
