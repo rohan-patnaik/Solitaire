@@ -3,10 +3,11 @@ use solitaire::cards::{Card, Rank, Suit};
 use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
-    DealCounters, SaveError, SaveRevision, default_deal_counters_path, default_freecell_save_path,
-    default_save_path, default_spider_save_path, load_deal_counters, load_freecell_revisioned,
-    load_klondike_revisioned, load_spider_revisioned, quarantine_save, save_deal_counters,
-    save_freecell_checked, save_klondike_checked, save_spider_checked,
+    DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, default_deal_counters_path,
+    default_freecell_save_path, default_save_path, default_spider_save_path, load_deal_counters,
+    load_freecell_revisioned, load_klondike_revisioned, load_spider_revisioned,
+    recover_freecell_revisioned, recover_klondike_revisioned, recover_spider_revisioned,
+    reserve_deal, save_freecell_checked, save_klondike_checked, save_spider_checked,
 };
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use std::cell::RefCell;
@@ -81,22 +82,25 @@ impl Controller {
     fn new() -> Self {
         let mut save_path = default_save_path();
         let mut status = "Choose a card to begin".to_owned();
-        let saved = load_or_recover(&mut save_path, load_klondike_revisioned, &mut status);
+        let saved = load_or_recover(&mut save_path, recover_klondike_revisioned, &mut status);
         let seed = saved
             .as_ref()
             .map_or_else(seed_now, |(game, _)| game.state.seed);
         let klondike_revision = saved.as_ref().map(|(_, revision)| *revision);
         let mut spider_save_path = default_spider_save_path();
-        let (spider, spider_revision) =
-            load_or_recover(&mut spider_save_path, load_spider_revisioned, &mut status)
-                .map_or_else(
-                    || (SpiderGame::new(seed.wrapping_add(1), SuitMode::One), None),
-                    |(game, revision)| (game, Some(revision)),
-                );
+        let (spider, spider_revision) = load_or_recover(
+            &mut spider_save_path,
+            recover_spider_revisioned,
+            &mut status,
+        )
+        .map_or_else(
+            || (SpiderGame::new(seed.wrapping_add(1), SuitMode::One), None),
+            |(game, revision)| (game, Some(revision)),
+        );
         let mut freecell_save_path = default_freecell_save_path();
         let (freecell, freecell_revision) = load_or_recover(
             &mut freecell_save_path,
-            load_freecell_revisioned,
+            recover_freecell_revisioned,
             &mut status,
         )
         .map_or_else(
@@ -302,6 +306,23 @@ impl Controller {
     }
 
     fn take_next_seed(&mut self) -> Option<u64> {
+        let kind = match self.active {
+            GameKind::Klondike => DealKind::Klondike,
+            GameKind::Spider => DealKind::Spider,
+            GameKind::FreeCell => DealKind::FreeCell,
+        };
+        if let Some(path) = self.deal_counters_path.as_deref() {
+            match reserve_deal(path, self.next_seeds, kind) {
+                Ok((seed, counters)) => {
+                    self.next_seeds = counters;
+                    return Some(seed);
+                }
+                Err(error) => {
+                    self.status = format!("Could not reserve the next deal persistently: {error}");
+                    return None;
+                }
+            }
+        }
         let seed = match self.active {
             GameKind::Klondike => self.next_seeds.klondike,
             GameKind::Spider => self.next_seeds.spider,
@@ -312,17 +333,6 @@ impl Controller {
             GameKind::Klondike => self.next_seeds.klondike = next,
             GameKind::Spider => self.next_seeds.spider = next,
             GameKind::FreeCell => self.next_seeds.freecell = next,
-        }
-        if let Some(path) = self.deal_counters_path.as_deref()
-            && let Err(error) = save_deal_counters(path, self.next_seeds)
-        {
-            match self.active {
-                GameKind::Klondike => self.next_seeds.klondike = seed,
-                GameKind::Spider => self.next_seeds.spider = seed,
-                GameKind::FreeCell => self.next_seeds.freecell = seed,
-            }
-            self.status = format!("Could not reserve the next deal persistently: {error}");
-            return None;
         }
         Some(seed)
     }
@@ -652,28 +662,26 @@ impl Controller {
 
 fn load_or_recover<T>(
     save_path: &mut Option<PathBuf>,
-    load: impl FnOnce(&std::path::Path) -> Result<T, SaveError>,
+    load: impl FnOnce(&std::path::Path) -> Result<RecoveredSave<T>, SaveError>,
     status: &mut String,
-) -> Option<T> {
+) -> Option<(T, SaveRevision)> {
     let path = save_path.clone()?;
     match load(&path) {
-        Ok(game) => Some(game),
+        Ok(RecoveredSave::Loaded(game, revision)) => Some((game, revision)),
+        Ok(RecoveredSave::Quarantined {
+            path: quarantined,
+            reason,
+        }) => {
+            *status = format!(
+                "Unreadable save preserved as {}; opened a fresh deal ({reason})",
+                quarantined.display()
+            );
+            None
+        }
         Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => {
-            match quarantine_save(&path) {
-                Ok(quarantined) => {
-                    *status = format!(
-                        "Unreadable save preserved as {}; opened a fresh deal ({error})",
-                        quarantined.display()
-                    );
-                }
-                Err(quarantine_error) => {
-                    *status = format!(
-                        "Save recovery failed; original left untouched ({error}; {quarantine_error})"
-                    );
-                    *save_path = None;
-                }
-            }
+            *status = format!("Save recovery failed; original left untouched ({error})");
+            *save_path = None;
             None
         }
     }

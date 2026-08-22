@@ -51,6 +51,13 @@ pub struct DealCounters {
     pub freecell: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DealKind {
+    Klondike,
+    Spider,
+    FreeCell,
+}
+
 /// Persists independent per-game next-deal counters.
 ///
 /// # Errors
@@ -71,6 +78,10 @@ pub fn save_deal_counters(path: &Path, counters: DealCounters) -> Result<(), Sav
 /// Returns a typed error for bounded I/O, malformed data, or an unsupported envelope.
 pub fn load_deal_counters(path: &Path) -> Result<DealCounters, SaveError> {
     let bytes = read_bounded(path)?;
+    parse_deal_counters(&bytes)
+}
+
+fn parse_deal_counters(bytes: &[u8]) -> Result<DealCounters, SaveError> {
     validate_json_depth(&bytes)?;
     let envelope: SaveEnvelope<DealCounters> = serde_json::from_slice(&bytes)?;
     if envelope.version != CURRENT_SAVE_VERSION {
@@ -80,6 +91,51 @@ pub fn load_deal_counters(path: &Path) -> Result<DealCounters, SaveError> {
         return Err(SaveError::WrongGame(envelope.game));
     }
     Ok(envelope.payload)
+}
+
+/// Reserves one unique per-game deal number in a single locked read-modify-write transaction.
+///
+/// Existing counters are raised to `minimum` so older counter files can never reuse a deal that
+/// is already open. The returned counters are the durably committed next values.
+///
+/// # Errors
+/// Returns a typed error for bounded locking, malformed storage, exhaustion, or atomic write.
+pub fn reserve_deal(
+    path: &Path,
+    minimum: DealCounters,
+    kind: DealKind,
+) -> Result<(u64, DealCounters), SaveError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let _lock = SaveLock::acquire(path)?;
+    let mut counters = match read_bounded(path) {
+        Ok(bytes) => parse_deal_counters(&bytes)?,
+        Err(SaveError::Io(error)) if error.kind() == io::ErrorKind::NotFound => minimum,
+        Err(error) => return Err(error),
+    };
+    counters.klondike = counters.klondike.max(minimum.klondike);
+    counters.spider = counters.spider.max(minimum.spider);
+    counters.freecell = counters.freecell.max(minimum.freecell);
+    let seed = match kind {
+        DealKind::Klondike => counters.klondike,
+        DealKind::Spider => counters.spider,
+        DealKind::FreeCell => counters.freecell,
+    };
+    let next = seed.checked_add(1).ok_or(SaveError::CounterOverflow)?;
+    match kind {
+        DealKind::Klondike => counters.klondike = next,
+        DealKind::Spider => counters.spider = next,
+        DealKind::FreeCell => counters.freecell = next,
+    }
+    let envelope = SaveEnvelope {
+        version: CURRENT_SAVE_VERSION,
+        game: "deal-counters".into(),
+        payload: counters,
+    };
+    atomic_write_locked(path, &bounded_json(&envelope)?)?;
+    Ok((seed, counters))
 }
 
 fn default_named_save_path(file_name: &str) -> Option<PathBuf> {
@@ -159,6 +215,10 @@ pub fn save_klondike_checked(
 /// Returns a typed error for I/O, JSON, version, game-kind, or invariant failure.
 pub fn load_klondike(path: &Path) -> Result<Game, SaveError> {
     let bytes = read_bounded(path)?;
+    parse_klondike(&bytes)
+}
+
+fn parse_klondike(bytes: &[u8]) -> Result<Game, SaveError> {
     validate_json_depth(&bytes)?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)?;
     let game = if value.get("version").is_some() {
@@ -187,7 +247,7 @@ pub fn load_klondike(path: &Path) -> Result<Game, SaveError> {
 /// # Errors
 /// Returns a typed load or bounded-lock error.
 pub fn load_klondike_revisioned(path: &Path) -> Result<(Game, SaveRevision), SaveError> {
-    load_with_revision(path, load_klondike)
+    load_with_revision(path, parse_klondike)
 }
 
 /// Saves a Spider game as a versioned deterministic replay.
@@ -215,7 +275,12 @@ pub fn save_spider_checked(
 /// # Errors
 /// Returns a typed error for malformed, unsupported, mismatched, or illegal data.
 pub fn load_spider(path: &Path) -> Result<spider::Game, SaveError> {
-    let replay = load_replay::<Replay<spider::Action, spider::SuitMode>>(path, "spider")?;
+    let bytes = read_bounded(path)?;
+    parse_spider(&bytes)
+}
+
+fn parse_spider(bytes: &[u8]) -> Result<spider::Game, SaveError> {
+    let replay = parse_replay::<Replay<spider::Action, spider::SuitMode>>(bytes, "spider")?;
     spider::Game::from_replay(&replay).map_err(|error| SaveError::InvalidReplay(error.to_string()))
 }
 
@@ -224,7 +289,7 @@ pub fn load_spider(path: &Path) -> Result<spider::Game, SaveError> {
 /// # Errors
 /// Returns a typed load or bounded-lock error.
 pub fn load_spider_revisioned(path: &Path) -> Result<(spider::Game, SaveRevision), SaveError> {
-    load_with_revision(path, load_spider)
+    load_with_revision(path, parse_spider)
 }
 
 /// Saves a `FreeCell` game as a versioned deterministic replay.
@@ -252,7 +317,12 @@ pub fn save_freecell_checked(
 /// # Errors
 /// Returns a typed error for malformed, unsupported, mismatched, or illegal data.
 pub fn load_freecell(path: &Path) -> Result<freecell::Game, SaveError> {
-    let replay = load_replay::<Replay<freecell::Action>>(path, "freecell")?;
+    let bytes = read_bounded(path)?;
+    parse_freecell(&bytes)
+}
+
+fn parse_freecell(bytes: &[u8]) -> Result<freecell::Game, SaveError> {
+    let replay = parse_replay::<Replay<freecell::Action>>(bytes, "freecell")?;
     freecell::Game::from_replay(&replay)
         .map_err(|error| SaveError::InvalidReplay(error.to_string()))
 }
@@ -262,17 +332,78 @@ pub fn load_freecell(path: &Path) -> Result<freecell::Game, SaveError> {
 /// # Errors
 /// Returns a typed load or bounded-lock error.
 pub fn load_freecell_revisioned(path: &Path) -> Result<(freecell::Game, SaveRevision), SaveError> {
-    load_with_revision(path, load_freecell)
+    load_with_revision(path, parse_freecell)
 }
 
 fn load_with_revision<T>(
     path: &Path,
-    load: impl FnOnce(&Path) -> Result<T, SaveError>,
+    parse: impl FnOnce(&[u8]) -> Result<T, SaveError>,
 ) -> Result<(T, SaveRevision), SaveError> {
     let _lock = SaveLock::acquire(path)?;
-    let value = load(path)?;
     let bytes = read_bounded(path)?;
+    let value = parse(&bytes)?;
     Ok((value, revision_for(&bytes)))
+}
+
+#[derive(Debug)]
+pub enum RecoveredSave<T> {
+    Loaded(T, SaveRevision),
+    Quarantined { path: PathBuf, reason: String },
+}
+
+/// Loads or atomically quarantines a malformed Klondike save under one bounded lock.
+///
+/// # Errors
+/// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
+pub fn recover_klondike_revisioned(path: &Path) -> Result<RecoveredSave<Game>, SaveError> {
+    recover_with_revision(path, parse_klondike, || {})
+}
+
+/// Loads or atomically quarantines a malformed Spider save under one bounded lock.
+///
+/// # Errors
+/// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
+pub fn recover_spider_revisioned(path: &Path) -> Result<RecoveredSave<spider::Game>, SaveError> {
+    recover_with_revision(path, parse_spider, || {})
+}
+
+/// Loads or atomically quarantines a malformed FreeCell save under one bounded lock.
+///
+/// # Errors
+/// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
+pub fn recover_freecell_revisioned(
+    path: &Path,
+) -> Result<RecoveredSave<freecell::Game>, SaveError> {
+    recover_with_revision(path, parse_freecell, || {})
+}
+
+fn recover_with_revision<T>(
+    path: &Path,
+    parse: impl FnOnce(&[u8]) -> Result<T, SaveError>,
+    before_identity_recheck: impl FnOnce(),
+) -> Result<RecoveredSave<T>, SaveError> {
+    let _lock = SaveLock::acquire(path)?;
+    let bytes = read_bounded(path)?;
+    let expected = revision_for(&bytes);
+    match parse(&bytes) {
+        Ok(value) => Ok(RecoveredSave::Loaded(value, expected)),
+        Err(error) => {
+            let reason = error.to_string();
+            before_identity_recheck();
+            let actual = current_save_revision(path)?;
+            if actual != Some(expected) {
+                return Err(SaveError::Conflict {
+                    expected: Some(expected),
+                    actual,
+                });
+            }
+            let quarantine = quarantine_save_locked(path, expected)?;
+            Ok(RecoveredSave::Quarantined {
+                path: quarantine,
+                reason,
+            })
+        }
+    }
 }
 
 fn save_replay<T: Serialize>(path: &Path, game: &str, replay: &T) -> Result<(), SaveError> {
@@ -330,8 +461,7 @@ fn revision_for(bytes: &[u8]) -> SaveRevision {
     }
 }
 
-fn load_replay<T: DeserializeOwned>(path: &Path, expected_game: &str) -> Result<T, SaveError> {
-    let bytes = read_bounded(path)?;
+fn parse_replay<T: DeserializeOwned>(bytes: &[u8], expected_game: &str) -> Result<T, SaveError> {
     validate_json_depth(&bytes)?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)?;
     let version = value
@@ -409,8 +539,14 @@ fn validate_json_depth(bytes: &[u8]) -> Result<(), SaveError> {
 /// Renames an unreadable save beside the original path for later inspection.
 ///
 /// # Errors
-/// Returns an I/O error if the quarantine rename fails.
-pub fn quarantine_save(path: &Path) -> io::Result<PathBuf> {
+/// Returns a typed error if bounded locking, identity checking, or quarantine fails.
+pub fn quarantine_save(path: &Path) -> Result<PathBuf, SaveError> {
+    let _lock = SaveLock::acquire(path)?;
+    let bytes = read_bounded(path)?;
+    quarantine_save_locked(path, revision_for(&bytes))
+}
+
+fn quarantine_save_locked(path: &Path, expected: SaveRevision) -> Result<PathBuf, SaveError> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs());
@@ -426,21 +562,56 @@ pub fn quarantine_save(path: &Path) -> io::Result<PathBuf> {
         let quarantine = path.with_extension(suffix);
         match fs::hard_link(path, &quarantine) {
             Ok(()) => {
+                let linked_revision = match read_bounded(&quarantine) {
+                    Ok(bytes) => revision_for(&bytes),
+                    Err(error) => {
+                        let _ = fs::remove_file(&quarantine);
+                        return Err(error);
+                    }
+                };
+                let same_identity = match same_file_identity(path, &quarantine) {
+                    Ok(same) => same,
+                    Err(error) => {
+                        let _ = fs::remove_file(&quarantine);
+                        return Err(error.into());
+                    }
+                };
+                if linked_revision != expected || !same_identity {
+                    let _ = fs::remove_file(&quarantine);
+                    return Err(SaveError::Conflict {
+                        expected: Some(expected),
+                        actual: current_save_revision(path)?,
+                    });
+                }
                 if let Err(error) = fs::remove_file(path) {
                     let _ = fs::remove_file(&quarantine);
-                    return Err(error);
+                    return Err(error.into());
                 }
                 sync_directory(parent)?;
                 return Ok(quarantine);
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     Err(io::Error::new(
         io::ErrorKind::AlreadyExists,
         "no collision-free quarantine name available",
-    ))
+    )
+    .into())
+}
+
+#[cfg(unix)]
+fn same_file_identity(left: &Path, right: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    let left = fs::metadata(left)?;
+    let right = fs::metadata(right)?;
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
+}
+
+#[cfg(not(unix))]
+fn same_file_identity(left: &Path, right: &Path) -> io::Result<bool> {
+    Ok(fs::canonicalize(left)? == fs::canonicalize(right)?)
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -567,6 +738,7 @@ pub enum SaveError {
     InvalidReplay(String),
     TooLarge(u64),
     JsonTooDeep,
+    CounterOverflow,
     Conflict {
         expected: Option<SaveRevision>,
         actual: Option<SaveRevision>,
@@ -599,6 +771,7 @@ impl std::fmt::Display for SaveError {
             Self::InvalidReplay(error) => write!(f, "saved replay is invalid: {error}"),
             Self::TooLarge(size) => write!(f, "save is {size} bytes; limit is {MAX_SAVE_BYTES}"),
             Self::JsonTooDeep => write!(f, "save JSON nesting exceeds {MAX_JSON_DEPTH} levels"),
+            Self::CounterOverflow => write!(f, "no further deal number is representable"),
             Self::Conflict { .. } => write!(
                 f,
                 "save changed in another Solitaire process; current game remains in memory—reload the other save or choose a separate data directory"
@@ -644,6 +817,71 @@ mod tests {
         assert_eq!(restored.klondike.checked_add(1), Some(42));
         assert_eq!(restored.spider.checked_add(1), Some(901));
         assert_eq!(restored.freecell.checked_add(1), Some(6));
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn reserve_deal_child_process() {
+        let Some(path) = std::env::var_os("SOLITAIRE_RESERVE_CHILD_PATH") else {
+            return;
+        };
+        let minimum = DealCounters {
+            klondike: 100,
+            spider: 900,
+            freecell: 5,
+        };
+        for attempt in 1..=16 {
+            match reserve_deal(Path::new(&path), minimum, DealKind::Klondike) {
+                Ok((seed, _)) => {
+                    println!("RESERVED={seed}");
+                    io::stdout().flush().unwrap();
+                    return;
+                }
+                Err(SaveError::Io(error))
+                    if error.kind() == io::ErrorKind::WouldBlock && attempt < 16 =>
+                {
+                    std::thread::yield_now();
+                }
+                Err(error) => panic!("deal reservation failed on attempt {attempt}: {error}"),
+            }
+        }
+    }
+
+    #[test]
+    fn multiple_processes_reserve_unique_per_game_deals() {
+        let path = test_path("reserve-processes.json");
+        let children = (0..8)
+            .map(|_| {
+                Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "persistence::tests::reserve_deal_child_process",
+                        "--exact",
+                        "--nocapture",
+                    ])
+                    .env("SOLITAIRE_RESERVE_CHILD_PATH", &path)
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut seeds = children
+            .into_iter()
+            .map(|child| {
+                let output = child.wait_with_output().unwrap();
+                assert!(output.status.success());
+                let stdout = String::from_utf8(output.stdout).unwrap();
+                stdout
+                    .lines()
+                    .find_map(|line| line.strip_prefix("RESERVED="))
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_unstable();
+        assert_eq!(seeds, (100..108).collect::<Vec<_>>());
+        assert_eq!(load_deal_counters(&path).unwrap().klondike, 108);
         fs::remove_file(&path).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
@@ -1002,6 +1240,55 @@ mod tests {
         assert_eq!(fs::read(&quarantined).unwrap(), b"broken");
         fs::remove_file(quarantined).unwrap();
         fs::remove_file(collision).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn corrupt_recovery_excludes_a_coordinated_replacement_until_quarantined() {
+        let path = test_path("quarantine-coordinated.json");
+        atomic_write(&path, b"broken").unwrap();
+        let replacement = bounded_json(&SaveEnvelope {
+            version: CURRENT_SAVE_VERSION,
+            game: "klondike".to_owned(),
+            payload: Game::new(818, Options::default()),
+        })
+        .unwrap();
+        let recovery = recover_with_revision(
+            &path,
+            |_| Err::<Game, SaveError>(SaveError::JsonTooDeep),
+            || {
+                let path = path.clone();
+                let writer = std::thread::spawn(move || atomic_write(&path, &replacement));
+                let error = writer.join().unwrap().unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+            },
+        )
+        .unwrap();
+        let RecoveredSave::Quarantined {
+            path: quarantined, ..
+        } = recovery
+        else {
+            panic!("corrupt save should be quarantined");
+        };
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined).unwrap(), b"broken");
+        fs::remove_file(quarantined).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn identity_change_aborts_quarantine_without_moving_replacement() {
+        let path = test_path("quarantine-identity.json");
+        atomic_write(&path, b"broken").unwrap();
+        let replacement = b"replacement remains";
+        let result = recover_with_revision(
+            &path,
+            |_| Err::<Game, SaveError>(SaveError::JsonTooDeep),
+            || fs::write(&path, replacement).unwrap(),
+        );
+        assert!(matches!(result, Err(SaveError::Conflict { .. })));
+        assert_eq!(fs::read(&path).unwrap(), replacement);
+        fs::remove_file(&path).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
 }
