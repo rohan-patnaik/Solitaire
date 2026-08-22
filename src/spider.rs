@@ -548,6 +548,37 @@ mod tests {
     }
 
     #[test]
+    fn legal_move_cycle_exceeds_undo_window_and_replay_rebuilds() {
+        let mut game = Game::new(1, SuitMode::One);
+        let forward = Action::Move {
+            from: 2,
+            to: 5,
+            count: 1,
+        };
+        let reverse = Action::Move {
+            from: 5,
+            to: 2,
+            count: 1,
+        };
+        let cycles = crate::replay::MAX_HISTORY_ACTIONS / 2 + 20;
+        for _ in 0..cycles {
+            game.apply(forward.clone()).unwrap();
+            game.apply(reverse.clone()).unwrap();
+        }
+
+        let replay = game.replay();
+        assert!(replay.actions.len() > crate::replay::MAX_HISTORY_ACTIONS);
+        assert_eq!(Game::from_replay(&replay).unwrap().state, game.state);
+
+        let mut undo_probe = game;
+        let mut undo_count = 0;
+        while undo_probe.undo() {
+            undo_count += 1;
+        }
+        assert_eq!(undo_count, crate::replay::MAX_HISTORY_ACTIONS);
+    }
+
+    #[test]
     fn typed_replay_with_wrong_version_is_rejected() {
         let mut replay = Game::new(1, SuitMode::Four).replay();
         replay.version = 99;
