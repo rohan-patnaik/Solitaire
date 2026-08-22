@@ -4,8 +4,10 @@ set -euo pipefail
 recipe=$(cd -- "$(dirname -- "$0")" && pwd)/PKGBUILD
 valid_lower=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 valid_upper=ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789
+valid_revision=0123456789abcdef0123456789abcdef01234567
 
 source_digest=$(env SOLITAIRE_SOURCE_ARCHIVE=fixture.tar.gz \
+  SOLITAIRE_EXPECTED_REVISION="$valid_revision" \
   SOLITAIRE_SOURCE_SHA256="$valid_upper" \
   bash -c 'source "$1"; printf "%s" "${sha256sums[0]}"' _ "$recipe")
 [[ $source_digest == "${valid_upper,,}" ]]
@@ -33,6 +35,14 @@ for invalid in '' SKIP abc 0123456789abcdef0123456789abcdef0123456789abcdef01234
   0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0 \
   z123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef; do
   expect_rejected SOLITAIRE_SOURCE_SHA256 "$invalid" \
-    env SOLITAIRE_SOURCE_ARCHIVE=fixture.tar.gz
+    env SOLITAIRE_SOURCE_ARCHIVE=fixture.tar.gz \
+    SOLITAIRE_EXPECTED_REVISION="$valid_revision"
   expect_rejected SOLITAIRE_RELEASE_SHA256 "$invalid" env
 done
+
+expect_rejected SOLITAIRE_SOURCE_ARCHIVE fixture.tar.gz \
+  env SOLITAIRE_SOURCE_SHA256="$valid_lower"
+expect_rejected SOLITAIRE_EXPECTED_REVISION "$valid_revision" env
+expect_rejected SOLITAIRE_EXPECTED_REVISION '' \
+  env SOLITAIRE_SOURCE_ARCHIVE=fixture.tar.gz \
+  SOLITAIRE_SOURCE_SHA256="$valid_lower"

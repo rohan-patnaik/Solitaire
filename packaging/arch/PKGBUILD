@@ -19,7 +19,21 @@ _normalize_sha256() {
   printf '%s' "$normalized"
 }
 
-if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
+if [[ ${SOLITAIRE_SOURCE_ARCHIVE+x} != ${SOLITAIRE_EXPECTED_REVISION+x} ]]; then
+  printf '%s\n' \
+    'SOLITAIRE_SOURCE_ARCHIVE and SOLITAIRE_EXPECTED_REVISION must be provided together' >&2
+  return 1
+fi
+
+if [[ ${SOLITAIRE_SOURCE_ARCHIVE+x} ]]; then
+  if [[ -z $SOLITAIRE_SOURCE_ARCHIVE ]]; then
+    printf '%s\n' 'SOLITAIRE_SOURCE_ARCHIVE must not be empty' >&2
+    return 1
+  fi
+  if [[ ! $SOLITAIRE_EXPECTED_REVISION =~ ^[0-9a-f]{40}$ ]]; then
+    printf '%s\n' 'SOLITAIRE_EXPECTED_REVISION must be a full Git SHA' >&2
+    return 1
+  fi
   if ! _source_sha256=$(_normalize_sha256 "${SOLITAIRE_SOURCE_SHA256:-}"); then
     printf '%s\n' 'SOLITAIRE_SOURCE_SHA256 must be exactly 64 hexadecimal characters' >&2
     return 1
