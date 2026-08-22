@@ -85,6 +85,7 @@ struct Controller {
     save_revisions: [Option<SaveRevision>; 3],
     dirty: [bool; 3],
     pending_new_deal: Option<PendingNewDeal>,
+    pending_new_deal_conflict: bool,
     deal_counters_path: Option<PathBuf>,
     next_seeds: DealCounters,
     status: String,
@@ -159,6 +160,7 @@ impl Controller {
             save_revisions,
             dirty: [false; 3],
             pending_new_deal: None,
+            pending_new_deal_conflict: false,
             deal_counters_path,
             next_seeds,
             status,
@@ -277,6 +279,7 @@ impl Controller {
         self.spider_selection = None;
         self.freecell_selection = None;
         self.pending_new_deal = None;
+        self.pending_new_deal_conflict = false;
         self.status = format!("{} ready", self.game_name());
     }
 
@@ -286,6 +289,7 @@ impl Controller {
             variant: variant.to_owned(),
         };
         self.pending_new_deal = Some(request);
+        self.pending_new_deal_conflict = false;
         if self.dirty[self.active_index()] {
             self.status = "This deal has unsaved progress. Retry save, discard it and start the new deal, or cancel.".into();
             return;
@@ -354,16 +358,32 @@ impl Controller {
                     ProspectiveGame::FreeCell(game) => self.freecell = game,
                 }
                 self.dirty[index] = false;
+                self.pending_new_deal_conflict = false;
                 self.clear_selections();
                 self.status = format!("New {} deal", self.game_name());
             }
+            Some(Err(error)) if error.committed_but_not_durable() => {
+                match candidate {
+                    ProspectiveGame::Klondike(game) => self.game = game,
+                    ProspectiveGame::Spider(game) => self.spider = game,
+                    ProspectiveGame::FreeCell(game) => self.freecell = game,
+                }
+                self.dirty[index] = true;
+                self.pending_new_deal_conflict = false;
+                self.clear_selections();
+                self.status = format!(
+                    "The new deal replaced the on-disk entry and is now current in memory, but durability is indeterminate: {error}"
+                );
+            }
             Some(Err(error)) => {
+                self.pending_new_deal_conflict = error.is_conflict();
                 self.pending_new_deal = Some(request);
                 self.status = format!(
                     "New deal was not started; the current game remains in memory because saving the prospective deal failed: {error}. Retry, discard, or cancel."
                 );
             }
             None => {
+                self.pending_new_deal_conflict = false;
                 self.pending_new_deal = Some(request);
                 self.status = "New deal was not started; the current game remains in memory because no writable save location is available. Retry, discard, or cancel.".into();
             }
@@ -419,6 +439,13 @@ impl Controller {
             Some(Ok(())) => {
                 self.dirty[index] = false;
                 true
+            }
+            Some(Err(error)) if error.committed_but_not_durable() => {
+                self.dirty[index] = true;
+                self.status = format!(
+                    "The on-disk entry now contains the current game, but durability is indeterminate: {error}"
+                );
+                false
             }
             Some(Err(error)) => {
                 self.dirty[index] = true;
@@ -697,6 +724,7 @@ impl Controller {
 
     fn cancel_pending_new_deal(&mut self) {
         if self.pending_new_deal.take().is_some() {
+            self.pending_new_deal_conflict = false;
             self.status = "New deal cancelled; current game preserved".into();
         } else {
             self.status = "No new deal is waiting for confirmation".into();
@@ -705,6 +733,7 @@ impl Controller {
 
     fn discard_unsaved_and_close(&mut self) {
         self.pending_new_deal = None;
+        self.pending_new_deal_conflict = false;
         self.dirty = [false; 3];
         self.status = "Unsaved progress discarded; closing".into();
     }
@@ -735,9 +764,13 @@ impl Controller {
                 let index = self.active_index();
                 self.save_revisions[index] = Some(revision);
                 self.dirty[index] = false;
+                self.pending_new_deal_conflict = false;
                 self.clear_selections();
-                self.status =
-                    "Reloaded the newer disk copy; in-memory changes were discarded".into();
+                self.status = if self.pending_new_deal.is_some() {
+                    "Reloaded the newer disk copy and refreshed save ownership; retry or cancel the pending new deal".into()
+                } else {
+                    "Reloaded the newer disk copy; in-memory changes were discarded".into()
+                };
             }
             Some(Err(error)) => {
                 self.status =
@@ -759,10 +792,21 @@ fn load_or_recover<T>(
         Ok(RecoveredSave::Quarantined {
             path: quarantined,
             reason,
+            durability_warning,
         }) => {
-            *status = format!(
-                "Unreadable save preserved as {}; opened a fresh deal ({reason})",
-                quarantined.display()
+            *status = durability_warning.map_or_else(
+                || {
+                    format!(
+                        "Unreadable save preserved as {}; opened a fresh deal ({reason})",
+                        quarantined.display()
+                    )
+                },
+                |warning| {
+                    format!(
+                        "Unreadable save moved to {}; the original path is gone, but directory durability is indeterminate ({warning}); opened a fresh deal ({reason})",
+                        quarantined.display()
+                    )
+                },
             );
             None
         }
@@ -993,6 +1037,7 @@ fn render(app: &AppWindow, controller: &Controller) {
     app.set_has_unsaved_changes(controller.dirty[controller.active_index()]);
     app.set_has_any_unsaved_changes(controller.dirty.iter().any(|dirty| *dirty));
     app.set_has_pending_new_deal(controller.pending_new_deal.is_some());
+    app.set_has_pending_save_conflict(controller.pending_new_deal_conflict);
     app.set_status_text(controller.status.as_str().into());
     match controller.active {
         GameKind::Klondike => render_klondike(app, controller),
@@ -1439,6 +1484,7 @@ mod tests {
             save_revisions: [None; 3],
             dirty: [false; 3],
             pending_new_deal: None,
+            pending_new_deal_conflict: false,
             deal_counters_path: None,
             next_seeds: DealCounters {
                 klondike: seed.saturating_add(1),
@@ -1580,6 +1626,41 @@ mod tests {
         assert!(controller.pending_new_deal.is_none());
         assert!(!controller.dirty[0]);
         assert_eq!(controller.game.state.seed, 304);
+        let (saved, _) = load_klondike_revisioned(&path).unwrap();
+        assert_eq!(saved, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn clean_pending_deal_conflict_can_reload_ownership_and_retry() {
+        let path = test_save("clean-pending-conflict");
+        remove_save(&path);
+        let mut controller = controller(350);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        let original = controller.game.clone();
+        let newer_disk_game = Game::new(999, Options::default());
+        solitaire::persistence::save_klondike(&path, &newer_disk_game).unwrap();
+
+        controller.new_game("Draw 3");
+
+        assert_eq!(controller.game, original);
+        assert!(!controller.dirty[0]);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(controller.pending_new_deal_conflict);
+        assert!(controller.status.contains("save changed in another"));
+
+        controller.reload_disk_copy();
+        assert_eq!(controller.game, newer_disk_game);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(!controller.pending_new_deal_conflict);
+        assert!(controller.status.contains("refreshed save ownership"));
+
+        controller.retry_save();
+        assert!(controller.pending_new_deal.is_none());
+        assert!(!controller.dirty[0]);
+        assert_ne!(controller.game, newer_disk_game);
+        assert_eq!(controller.game.state.options.draw_mode, DrawMode::Three);
         let (saved, _) = load_klondike_revisioned(&path).unwrap();
         assert_eq!(saved, controller.game);
         remove_save(&path);

@@ -68,8 +68,10 @@ pub fn save_deal_counters(path: &Path, counters: DealCounters) -> Result<(), Sav
         game: "deal-counters".into(),
         payload: counters,
     };
-    atomic_write(path, &bounded_json(&envelope)?)?;
-    Ok(())
+    finish_namespace_write(
+        atomic_write(path, &bounded_json(&envelope)?)?,
+        "saving deal counters",
+    )
 }
 
 /// Loads independent per-game next-deal counters.
@@ -134,7 +136,10 @@ pub fn reserve_deal(
         game: "deal-counters".into(),
         payload: counters,
     };
-    atomic_write_locked(path, &bounded_json(&envelope)?)?;
+    finish_namespace_write(
+        atomic_write_locked(path, &bounded_json(&envelope)?)?,
+        "reserving a deal number",
+    )?;
     Ok((seed, counters))
 }
 
@@ -169,8 +174,7 @@ pub fn save_klondike(path: &Path, game: &Game) -> Result<(), SaveError> {
         payload: game,
     };
     let json = bounded_json(&envelope)?;
-    atomic_write(path, &json)?;
-    Ok(())
+    finish_namespace_write(atomic_write(path, &json)?, "saving Klondike")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -348,7 +352,17 @@ fn load_with_revision<T>(
 #[derive(Debug)]
 pub enum RecoveredSave<T> {
     Loaded(T, SaveRevision),
-    Quarantined { path: PathBuf, reason: String },
+    Quarantined {
+        path: PathBuf,
+        reason: String,
+        durability_warning: Option<String>,
+    },
+}
+
+#[derive(Debug)]
+pub enum NamespaceMutation<T> {
+    Durable(T),
+    CommittedButNotDurable { value: T, error: io::Error },
 }
 
 /// Loads or atomically quarantines a malformed Klondike save under one bounded lock.
@@ -356,7 +370,7 @@ pub enum RecoveredSave<T> {
 /// # Errors
 /// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
 pub fn recover_klondike_revisioned(path: &Path) -> Result<RecoveredSave<Game>, SaveError> {
-    recover_with_revision(path, parse_klondike, || {})
+    recover_with_revision(path, parse_klondike, || {}, sync_directory)
 }
 
 /// Loads or atomically quarantines a malformed Spider save under one bounded lock.
@@ -364,7 +378,7 @@ pub fn recover_klondike_revisioned(path: &Path) -> Result<RecoveredSave<Game>, S
 /// # Errors
 /// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
 pub fn recover_spider_revisioned(path: &Path) -> Result<RecoveredSave<spider::Game>, SaveError> {
-    recover_with_revision(path, parse_spider, || {})
+    recover_with_revision(path, parse_spider, || {}, sync_directory)
 }
 
 /// Loads or atomically quarantines a malformed FreeCell save under one bounded lock.
@@ -374,13 +388,14 @@ pub fn recover_spider_revisioned(path: &Path) -> Result<RecoveredSave<spider::Ga
 pub fn recover_freecell_revisioned(
     path: &Path,
 ) -> Result<RecoveredSave<freecell::Game>, SaveError> {
-    recover_with_revision(path, parse_freecell, || {})
+    recover_with_revision(path, parse_freecell, || {}, sync_directory)
 }
 
 fn recover_with_revision<T>(
     path: &Path,
     parse: impl FnOnce(&[u8]) -> Result<T, SaveError>,
     before_identity_recheck: impl FnOnce(),
+    sync: impl FnOnce(&Path) -> io::Result<()>,
 ) -> Result<RecoveredSave<T>, SaveError> {
     let _lock = SaveLock::acquire(path)?;
     let bytes = read_bounded(path)?;
@@ -397,11 +412,20 @@ fn recover_with_revision<T>(
                     actual,
                 });
             }
-            let quarantine = quarantine_save_locked(path, expected)?;
-            Ok(RecoveredSave::Quarantined {
-                path: quarantine,
-                reason,
-            })
+            match quarantine_save_locked_with_sync(path, expected, sync)? {
+                NamespaceMutation::Durable(path) => Ok(RecoveredSave::Quarantined {
+                    path,
+                    reason,
+                    durability_warning: None,
+                }),
+                NamespaceMutation::CommittedButNotDurable { value: path, error } => {
+                    Ok(RecoveredSave::Quarantined {
+                        path,
+                        reason,
+                        durability_warning: Some(error.to_string()),
+                    })
+                }
+            }
         }
     }
 }
@@ -412,8 +436,10 @@ fn save_replay<T: Serialize>(path: &Path, game: &str, replay: &T) -> Result<(), 
         game: game.to_owned(),
         payload: replay,
     };
-    atomic_write(path, &bounded_json(&envelope)?)?;
-    Ok(())
+    finish_namespace_write(
+        atomic_write(path, &bounded_json(&envelope)?)?,
+        "saving replay",
+    )
 }
 
 fn save_replay_checked<T: Serialize>(
@@ -435,6 +461,15 @@ fn compare_and_write(
     bytes: &[u8],
     expected: &mut Option<SaveRevision>,
 ) -> Result<(), SaveError> {
+    compare_and_write_with_sync(path, bytes, expected, sync_directory)
+}
+
+fn compare_and_write_with_sync(
+    path: &Path,
+    bytes: &[u8],
+    expected: &mut Option<SaveRevision>,
+    sync: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<(), SaveError> {
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
@@ -447,9 +482,9 @@ fn compare_and_write(
             actual,
         });
     }
-    atomic_write_locked(path, bytes)?;
+    let outcome = atomic_write_locked_with_sync(path, bytes, sync)?;
     *expected = Some(revision_for(bytes));
-    Ok(())
+    finish_namespace_write(outcome, "replacing the save")
 }
 
 fn revision_for(bytes: &[u8]) -> SaveRevision {
@@ -540,13 +575,24 @@ fn validate_json_depth(bytes: &[u8]) -> Result<(), SaveError> {
 ///
 /// # Errors
 /// Returns a typed error if bounded locking, identity checking, or quarantine fails.
-pub fn quarantine_save(path: &Path) -> Result<PathBuf, SaveError> {
+pub fn quarantine_save(path: &Path) -> Result<NamespaceMutation<PathBuf>, SaveError> {
     let _lock = SaveLock::acquire(path)?;
     let bytes = read_bounded(path)?;
     quarantine_save_locked(path, revision_for(&bytes))
 }
 
-fn quarantine_save_locked(path: &Path, expected: SaveRevision) -> Result<PathBuf, SaveError> {
+fn quarantine_save_locked(
+    path: &Path,
+    expected: SaveRevision,
+) -> Result<NamespaceMutation<PathBuf>, SaveError> {
+    quarantine_save_locked_with_sync(path, expected, sync_directory)
+}
+
+fn quarantine_save_locked_with_sync(
+    path: &Path,
+    expected: SaveRevision,
+    sync: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<NamespaceMutation<PathBuf>, SaveError> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs());
@@ -587,8 +633,13 @@ fn quarantine_save_locked(path: &Path, expected: SaveRevision) -> Result<PathBuf
                     let _ = fs::remove_file(&quarantine);
                     return Err(error.into());
                 }
-                sync_directory(parent)?;
-                return Ok(quarantine);
+                return Ok(match sync(parent) {
+                    Ok(()) => NamespaceMutation::Durable(quarantine),
+                    Err(error) => NamespaceMutation::CommittedButNotDurable {
+                        value: quarantine,
+                        error,
+                    },
+                });
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error.into()),
@@ -614,7 +665,7 @@ fn same_file_identity(left: &Path, right: &Path) -> io::Result<bool> {
     Ok(fs::canonicalize(left)? == fs::canonicalize(right)?)
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<NamespaceMutation<()>> {
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
@@ -623,7 +674,15 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     atomic_write_locked(path, bytes)
 }
 
-fn atomic_write_locked(path: &Path, bytes: &[u8]) -> io::Result<()> {
+fn atomic_write_locked(path: &Path, bytes: &[u8]) -> io::Result<NamespaceMutation<()>> {
+    atomic_write_locked_with_sync(path, bytes, sync_directory)
+}
+
+fn atomic_write_locked_with_sync(
+    path: &Path,
+    bytes: &[u8],
+    sync: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<NamespaceMutation<()>> {
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
@@ -642,12 +701,27 @@ fn atomic_write_locked(path: &Path, bytes: &[u8]) -> io::Result<()> {
         file.sync_all()?;
         drop(file);
         fs::rename(&temporary, path)?;
-        sync_directory(parent)
+        Ok(match sync(parent) {
+            Ok(()) => NamespaceMutation::Durable(()),
+            Err(error) => NamespaceMutation::CommittedButNotDurable { value: (), error },
+        })
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+fn finish_namespace_write(
+    outcome: NamespaceMutation<()>,
+    operation: &'static str,
+) -> Result<(), SaveError> {
+    match outcome {
+        NamespaceMutation::Durable(()) => Ok(()),
+        NamespaceMutation::CommittedButNotDurable { error, .. } => {
+            Err(SaveError::CommittedButNotDurable { operation, error })
+        }
+    }
 }
 
 fn sync_directory(path: &Path) -> io::Result<()> {
@@ -739,6 +813,10 @@ pub enum SaveError {
     TooLarge(u64),
     JsonTooDeep,
     CounterOverflow,
+    CommittedButNotDurable {
+        operation: &'static str,
+        error: io::Error,
+    },
     Conflict {
         expected: Option<SaveRevision>,
         actual: Option<SaveRevision>,
@@ -760,6 +838,17 @@ impl From<ValidationError> for SaveError {
         Self::InvalidState(value)
     }
 }
+impl SaveError {
+    #[must_use]
+    pub const fn committed_but_not_durable(&self) -> bool {
+        matches!(self, Self::CommittedButNotDurable { .. })
+    }
+
+    #[must_use]
+    pub const fn is_conflict(&self) -> bool {
+        matches!(self, Self::Conflict { .. })
+    }
+}
 impl std::fmt::Display for SaveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -772,6 +861,10 @@ impl std::fmt::Display for SaveError {
             Self::TooLarge(size) => write!(f, "save is {size} bytes; limit is {MAX_SAVE_BYTES}"),
             Self::JsonTooDeep => write!(f, "save JSON nesting exceeds {MAX_JSON_DEPTH} levels"),
             Self::CounterOverflow => write!(f, "no further deal number is representable"),
+            Self::CommittedButNotDurable { operation, error } => write!(
+                f,
+                "{operation} changed the on-disk entry, but directory synchronization failed: {error}; retry to confirm durability"
+            ),
             Self::Conflict { .. } => write!(
                 f,
                 "save changed in another Solitaire process; current game remains in memory—reload the other save or choose a separate data directory"
@@ -792,6 +885,15 @@ mod tests {
 
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("solitaire-save-test-{}-{name}", std::process::id()))
+    }
+
+    fn durable_path(outcome: NamespaceMutation<PathBuf>) -> PathBuf {
+        match outcome {
+            NamespaceMutation::Durable(path) => path,
+            NamespaceMutation::CommittedButNotDurable { .. } => {
+                panic!("test filesystem unexpectedly failed directory synchronization")
+            }
+        }
     }
 
     #[test]
@@ -987,7 +1089,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(load_klondike(&corrupt), Err(SaveError::Json(_))));
-        let quarantined = quarantine_save(&corrupt).unwrap();
+        let quarantined = durable_path(quarantine_save(&corrupt).unwrap());
         assert!(!corrupt.exists());
         assert!(quarantined.exists());
         fs::remove_file(quarantined).unwrap();
@@ -1081,6 +1183,34 @@ mod tests {
     }
 
     #[test]
+    fn post_rename_sync_failure_advances_revision_and_retry_is_safe() {
+        let path = test_path("post-rename-sync.json");
+        let first = Game::new(501, Options::default());
+        save_klondike(&path, &first).unwrap();
+        let mut expected = current_save_revision(&path).unwrap();
+        let replacement = Game::new(502, Options::default());
+        let bytes = bounded_json(&SaveEnvelope {
+            version: CURRENT_SAVE_VERSION,
+            game: "klondike".to_owned(),
+            payload: &replacement,
+        })
+        .unwrap();
+
+        let error = compare_and_write_with_sync(&path, &bytes, &mut expected, |_| {
+            Err(io::Error::other("injected directory sync failure"))
+        })
+        .unwrap_err();
+
+        assert!(error.committed_but_not_durable());
+        assert_eq!(expected, Some(revision_for(&bytes)));
+        assert_eq!(load_klondike(&path).unwrap(), replacement);
+        compare_and_write(&path, &bytes, &mut expected).unwrap();
+        assert_eq!(load_klondike(&path).unwrap(), replacement);
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
     fn save_lock_child_process() {
         let Some(path) = std::env::var_os("SOLITAIRE_LOCK_CHILD_PATH") else {
             return;
@@ -1131,7 +1261,7 @@ mod tests {
                     const MAX_ATTEMPTS: usize = 16;
                     for attempt in 1..=MAX_ATTEMPTS {
                         match atomic_write(&path, &[value; 64]) {
-                            Ok(()) => return attempt,
+                            Ok(_) => return attempt,
                             Err(error)
                                 if error.kind() == io::ErrorKind::WouldBlock
                                     && attempt < MAX_ATTEMPTS =>
@@ -1234,7 +1364,7 @@ mod tests {
             .as_secs();
         let collision = path.with_extension(format!("json.corrupt-{timestamp}"));
         fs::write(&collision, b"existing evidence").unwrap();
-        let quarantined = quarantine_save(&path).unwrap();
+        let quarantined = durable_path(quarantine_save(&path).unwrap());
         assert_ne!(quarantined, collision);
         assert_eq!(fs::read(&collision).unwrap(), b"existing evidence");
         assert_eq!(fs::read(&quarantined).unwrap(), b"broken");
@@ -1262,6 +1392,7 @@ mod tests {
                 let error = writer.join().unwrap().unwrap_err();
                 assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
             },
+            sync_directory,
         )
         .unwrap();
         let RecoveredSave::Quarantined {
@@ -1285,10 +1416,43 @@ mod tests {
             &path,
             |_| Err::<Game, SaveError>(SaveError::JsonTooDeep),
             || fs::write(&path, replacement).unwrap(),
+            sync_directory,
         );
         assert!(matches!(result, Err(SaveError::Conflict { .. })));
         assert_eq!(fs::read(&path).unwrap(), replacement);
         fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn post_quarantine_sync_failure_reports_committed_location() {
+        let path = test_path("post-quarantine-sync.json");
+        atomic_write(&path, b"broken").unwrap();
+
+        let recovery = recover_with_revision(
+            &path,
+            |_| Err::<Game, SaveError>(SaveError::JsonTooDeep),
+            || {},
+            |_| Err(io::Error::other("injected directory sync failure")),
+        )
+        .unwrap();
+        let RecoveredSave::Quarantined {
+            path: quarantined,
+            durability_warning: Some(warning),
+            ..
+        } = recovery
+        else {
+            panic!("post-unlink sync failure must retain the committed quarantine path");
+        };
+
+        assert!(warning.contains("injected directory sync failure"));
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined).unwrap(), b"broken");
+        assert!(matches!(
+            recover_klondike_revisioned(&path),
+            Err(SaveError::Io(error)) if error.kind() == io::ErrorKind::NotFound
+        ));
+        fs::remove_file(quarantined).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
 }

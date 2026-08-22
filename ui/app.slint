@@ -129,6 +129,7 @@ export component AppWindow inherits Window {
     in property <bool> has-unsaved-changes;
     in property <bool> has-any-unsaved-changes;
     in property <bool> has-pending-new-deal;
+    in property <bool> has-pending-save-conflict;
 
     callback select-game(string);
     callback new-game(string);
@@ -177,8 +178,10 @@ export component AppWindow inherits Window {
             }
             Button {
                 text: "Reload disk copy";
-                enabled: root.has-unsaved-changes;
-                accessible-label: "Discard in-memory changes and reload the newer disk copy";
+                enabled: root.has-unsaved-changes || root.has-pending-save-conflict;
+                accessible-label: root.has-pending-save-conflict
+                    ? "Reload the newer disk copy and resolve pending new deal ownership"
+                    : "Discard in-memory changes and reload the newer disk copy";
                 clicked => { root.reload-disk-requested(); }
             }
             Rectangle { horizontal-stretch: 1; }
