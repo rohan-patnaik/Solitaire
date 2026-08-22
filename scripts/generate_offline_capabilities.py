@@ -26,6 +26,8 @@ def load_and_validate():
             raise SystemExit("current_tip_ci url must identify a GitHub Actions run")
         if current_tip_ci.get("conclusion") not in {"success", "failure", "cancelled"}:
             raise SystemExit("current_tip_ci conclusion must be explicit")
+        if current_tip_ci.get("scope") != "application_source":
+            raise SystemExit("current_tip_ci scope must be application_source")
     rows = data["capabilities"]
     ids = [row["id"] for row in rows]
     if len(ids) != len(set(ids)):
@@ -53,10 +55,10 @@ def load_and_validate():
 def render(data, rows):
     counts = Counter(row["status"] for row in rows)
     current_tip_ci = data.get("current_tip_ci")
-    current_tip_line = "Current remediation exact-tip CI: not yet recorded."
+    current_tip_line = "Pinned application-source CI: not yet recorded."
     if current_tip_ci is not None:
         current_tip_line = (
-            "Current remediation exact-tip CI: "
+            "Pinned application-source CI: "
             f"`{current_tip_ci['revision']}` at {current_tip_ci['url']} "
             f"({current_tip_ci['conclusion']})."
         )

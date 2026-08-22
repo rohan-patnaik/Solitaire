@@ -1,10 +1,11 @@
 pkgname=solitaire-omarchy
 _upstream_version=0.1.0
 _release_revision_count=0
-_commit=df9f4f3cf4b49482f031ea5b890a117a31b93408
-_release_evidence_ci=https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489
+_commit=dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc
+_release_sha256=6db5400d5d384302d43bb218618468233ab27f850e76580f21fb46d25fac43bf
+_release_evidence_ci=https://github.com/rohan-patnaik/Solitaire/actions/runs/32551758881
 pkgver=${_upstream_version}.r${_release_revision_count}.g${_commit::7}
-pkgrel=2
+pkgrel=1
 pkgdesc="Original offline collection of classic patience games"
 arch=('x86_64')
 url="https://github.com/rohan-patnaik/Solitaire"
@@ -27,7 +28,11 @@ if [[ -n ${SOLITAIRE_SOURCE_ARCHIVE:-} ]]; then
   sha256sums=("$_source_sha256")
   _source_dir=Solitaire
 else
-  if ! _release_archive_sha256=$(_normalize_sha256 "${SOLITAIRE_RELEASE_SHA256:-}"); then
+  _release_sha256_input=$_release_sha256
+  if [[ ${SOLITAIRE_RELEASE_SHA256+x} ]]; then
+    _release_sha256_input=$SOLITAIRE_RELEASE_SHA256
+  fi
+  if ! _release_archive_sha256=$(_normalize_sha256 "$_release_sha256_input"); then
     printf '%s\n' 'SOLITAIRE_RELEASE_SHA256 must be a verified 64-character hexadecimal digest' >&2
     return 1
   fi

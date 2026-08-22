@@ -2,10 +2,10 @@
   "schema_version": 1,
   "upstream_version": "0.1.0",
   "release_revision_count": 0,
-  "pkgrel": 2,
-  "source_revision": "df9f4f3cf4b49482f031ea5b890a117a31b93408",
-  "source_archive": "https://github.com/rohan-patnaik/Solitaire/archive/df9f4f3cf4b49482f031ea5b890a117a31b93408.tar.gz",
-  "source_sha256": null,
-  "evidence_ci": "https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489",
-  "release_status": "blocked_pending_verified_archive_checksum"
+  "pkgrel": 1,
+  "source_revision": "dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc",
+  "source_archive": "https://github.com/rohan-patnaik/Solitaire/archive/dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc.tar.gz",
+  "source_sha256": "6db5400d5d384302d43bb218618468233ab27f850e76580f21fb46d25fac43bf",
+  "evidence_ci": "https://github.com/rohan-patnaik/Solitaire/actions/runs/32551758881",
+  "release_status": "verified_application_revision"
 }

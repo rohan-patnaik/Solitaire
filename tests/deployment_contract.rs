@@ -19,9 +19,11 @@ fn arch_recipe_packages_the_expected_revision() {
     assert!(recipe.contains(".solitaire-source-revision"));
     assert!(recipe.contains("cargo test --locked --all-targets --all-features"));
     assert!(recipe.contains("$pkgdir/usr/share/$pkgname/source-revision"));
-    assert!(!recipe.contains("_commit=49fda3a"));
-    assert!(recipe.contains("_commit=df9f4f3cf4b49482f031ea5b890a117a31b93408"));
-    assert!(!recipe.contains("deec66f09fa9d3afda9831f6cf258da3d660b873"));
+    assert!(recipe.contains("_commit=dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc"));
+    assert!(recipe.contains(
+        "_release_sha256=6db5400d5d384302d43bb218618468233ab27f850e76580f21fb46d25fac43bf"
+    ));
+    assert!(recipe.contains("pkgrel=1"));
     assert!(recipe.contains("SOLITAIRE_RELEASE_SHA256"));
     assert!(recipe.contains("^[0-9a-f]{64}$"));
     assert!(recipe.contains("${1,,}"));
@@ -30,9 +32,12 @@ fn arch_recipe_packages_the_expected_revision() {
         assert!(checksum_tests.contains(invalid));
     }
     let release = include_str!("../packaging/arch/release.json");
-    assert!(release.contains("\"source_sha256\": null"));
-    assert!(release.contains("blocked_pending_verified_archive_checksum"));
-    assert!(release.contains("actions/runs/32498442489"));
+    assert!(release.contains("\"source_revision\": \"dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc\""));
+    assert!(release.contains(
+        "\"source_sha256\": \"6db5400d5d384302d43bb218618468233ab27f850e76580f21fb46d25fac43bf\""
+    ));
+    assert!(release.contains("actions/runs/32551758881"));
+    assert!(release.contains("verified_application_revision"));
 }
 
 #[test]
@@ -50,16 +55,18 @@ fn arch_ci_verifies_the_installed_revision() {
 }
 
 #[test]
-fn capability_catalog_distinguishes_baseline_from_unpublished_current_tip() {
+fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
-    assert!(metadata.contains("df9f4f3cf4b49482f031ea5b890a117a31b93408"));
-    assert!(metadata.contains("actions/runs/32498442489"));
-    assert!(metadata.contains("\"current_tip_ci\": null"));
+    assert!(metadata.contains("dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc"));
+    assert!(metadata.contains("actions/runs/32551758881"));
+    assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
-    assert!(generated.contains("Current remediation exact-tip CI:"));
-    assert!(generated.contains("Current remediation exact-tip CI: not yet recorded."));
+    assert!(generated.contains("Pinned application-source CI:"));
+    assert!(generated.contains("dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc"));
+    assert!(generated.contains("actions/runs/32551758881"));
+    assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
 }
 

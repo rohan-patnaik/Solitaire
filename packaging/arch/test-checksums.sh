@@ -10,6 +10,11 @@ source_digest=$(env SOLITAIRE_SOURCE_ARCHIVE=fixture.tar.gz \
   bash -c 'source "$1"; printf "%s" "${sha256sums[0]}"' _ "$recipe")
 [[ $source_digest == "${valid_upper,,}" ]]
 
+default_release_digest=$(bash -c \
+  'source "$1"; printf "%s" "${sha256sums[0]}"' _ "$recipe")
+[[ $default_release_digest == \
+  6db5400d5d384302d43bb218618468233ab27f850e76580f21fb46d25fac43bf ]]
+
 release_digest=$(env SOLITAIRE_RELEASE_SHA256="$valid_lower" \
   bash -c 'source "$1"; printf "%s" "${sha256sums[0]}"' _ "$recipe")
 [[ $release_digest == "$valid_lower" ]]

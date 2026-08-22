@@ -4,7 +4,7 @@ Generated from `docs/offline-capabilities.json`; do not edit by hand.
 No parity score is claimed. Statuses describe evidence, not UI presence.
 Baseline evidence revision: `df9f4f3cf4b49482f031ea5b890a117a31b93408`.
 Baseline CI: https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489.
-Current remediation exact-tip CI: not yet recorded.
+Pinned application-source CI: `dc193f4cea8510ccb8bc803ebd457ecd28d9d8bc` at https://github.com/rohan-patnaik/Solitaire/actions/runs/32551758881 (success).
 
 | Status | Count |
 | --- | ---: |
@@ -16,7 +16,7 @@ Current remediation exact-tip CI: not yet recorded.
 | ID | Capability | Status | Known limit |
 | --- | --- | --- | --- |
 | `foundation.omarchy-launcher` | Detached Omarchy launcher | Partial | Real Omarchy acceptance is pending. |
-| `foundation.arch-package` | Exact-revision Arch package | Partial | Requires exact-tip CI evidence after remediation. |
+| `foundation.arch-package` | Exact-revision Arch package | Partial | Green source and package CI is recorded for the pinned application revision; later metadata-only commits are not covered by that run. |
 | `foundation.persistence-safety` | Bounded atomic local persistence | Partial | Real-filesystem and power-loss acceptance remain pending. |
 | `game.klondike` | Playable Klondike | Partial | Drag/drop, full options, win presentation, and platform acceptance remain open. |
 | `game.spider` | Playable Spider | Partial | Broader hostile/property and platform evidence remain open. |
