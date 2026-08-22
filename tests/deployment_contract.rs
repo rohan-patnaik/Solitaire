@@ -59,13 +59,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
-    assert!(metadata.contains("447fa319cc05bcb509735d9d124a4daa5f35ffcb"));
-    assert!(metadata.contains("actions/runs/32579498934"));
+    assert!(metadata.contains("7aec70f0f2061dcc44d49bedcb4a0a7b1ae32143"));
+    assert!(metadata.contains("actions/runs/32582899798"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("447fa319cc05bcb509735d9d124a4daa5f35ffcb"));
-    assert!(generated.contains("actions/runs/32579498934"));
+    assert!(generated.contains("7aec70f0f2061dcc44d49bedcb4a0a7b1ae32143"));
+    assert!(generated.contains("actions/runs/32582899798"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
 }
@@ -147,6 +147,26 @@ fn pyramid_surface_declares_keyboard_and_accessibility_contracts() {
     assert!(controller.contains("Pyramid tableau position {position}, covered, face-down"));
     assert!(controller.contains("Pyramid waste, {}{}; activate to select or remove"));
     assert!(ui.contains("Deal  \" + root.deal-number"));
+}
+
+#[test]
+fn local_statistics_surface_declares_scope_and_dirty_state_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let profile = include_str!("../src/profile.rs");
+    for contract in [
+        "Local: 0 played · 0 won",
+        "Device-local statistics for the active game",
+        "controller.local_profile_dirty",
+        "Retry before closing",
+        "deals_played",
+        "deals_won",
+    ] {
+        assert!(
+            ui.contains(contract) || controller.contains(contract) || profile.contains(contract),
+            "missing local-statistics contract: {contract}"
+        );
+    }
 }
 
 #[test]

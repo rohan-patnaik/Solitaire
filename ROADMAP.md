@@ -24,7 +24,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Real Omarchy visual and assistive-technology acceptance is still pending.
 - TriPeaks standard mode now has a playable Slint surface backed by its deterministic engine, with numbered deals, undo/redo, hints, replay save/resume, bounded recovery, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - Pyramid standard mode now has a playable original Slint surface backed by its deterministic engine, with numbered deals, pair-to-13 and king removal, two redeals, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
-- The collection layer and release-quality work remain open.
+- A bounded anonymous device-local profile now records per-game deals played and won from proven controller lifecycle transitions. Named profiles, achievements, streaks, import/export, sync, broader collection workflows, and release-quality work remain open.
 
 ### M0 — foundation
 
@@ -59,6 +59,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Curated journeys using original deals and names; difficulty ratings backed by solvers.
 - Local achievements, statistics, streaks, profiles, import/export, reduced-motion mode.
 - Themes assembled only from repository-owned or audited open assets.
+- Foundation implemented: one versioned device-local profile records idempotent per-game played/won counters with bounded atomic persistence, stale-writer detection, corrupt-file quarantine, retry, and source preservation. It does not yet implement named profiles, achievements, streaks, import/export, sync, or cross-file transactional recovery.
 
 ### M5 — release quality
 

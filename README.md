@@ -13,7 +13,7 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 ## Status
 
-M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, and live status text.
+M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
 Broader hostile/property coverage, the collection layer, and final real-Omarchy acceptance remain tracked in [ROADMAP.md](ROADMAP.md).
 
@@ -36,6 +36,8 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Choose draw one or draw three before starting a new deal.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
+
+The active game's local statistics count a deal as played on its first successful mutation and count a win once for that numbered deal. The fixed-size versioned profile uses the same bounded atomic save, stale-writer detection, retry/close guard, and corrupt-file quarantine behavior as game saves. It is one anonymous device-local profile: named profiles, achievements, streaks, import/export, cross-device sync, and cloud identity remain unimplemented. Game and profile files are each atomic but are not one cross-file transaction, so power-loss acceptance remains open.
 
 ## Spider, FreeCell, Pyramid, and TriPeaks controls
 
