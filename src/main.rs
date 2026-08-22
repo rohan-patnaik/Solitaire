@@ -6,9 +6,9 @@ use solitaire::persistence::{
     DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
     default_deal_counters_path, default_freecell_save_path, default_save_path,
     default_spider_save_path, load_deal_counters, load_freecell_revisioned,
-    load_klondike_revisioned, load_spider_revisioned,
-    recover_freecell_revisioned, recover_klondike_revisioned, recover_spider_revisioned,
-    reserve_deal, save_freecell_checked, save_klondike_checked, save_spider_checked,
+    load_klondike_revisioned, load_spider_revisioned, recover_freecell_revisioned,
+    recover_klondike_revisioned, recover_spider_revisioned, reserve_deal, save_freecell_checked,
+    save_klondike_checked, save_spider_checked,
 };
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use std::cell::RefCell;
@@ -341,15 +341,18 @@ impl Controller {
         };
         let index = self.active_index();
         let saved = match &candidate {
-            ProspectiveGame::Klondike(game) => self.save_path.as_deref().map(|path| {
-                save_klondike_checked(path, game, &mut self.save_revisions[index])
-            }),
-            ProspectiveGame::Spider(game) => self.spider_save_path.as_deref().map(|path| {
-                save_spider_checked(path, game, &mut self.save_revisions[index])
-            }),
-            ProspectiveGame::FreeCell(game) => self.freecell_save_path.as_deref().map(|path| {
-                save_freecell_checked(path, game, &mut self.save_revisions[index])
-            }),
+            ProspectiveGame::Klondike(game) => self
+                .save_path
+                .as_deref()
+                .map(|path| save_klondike_checked(path, game, &mut self.save_revisions[index])),
+            ProspectiveGame::Spider(game) => self
+                .spider_save_path
+                .as_deref()
+                .map(|path| save_spider_checked(path, game, &mut self.save_revisions[index])),
+            ProspectiveGame::FreeCell(game) => self
+                .freecell_save_path
+                .as_deref()
+                .map(|path| save_freecell_checked(path, game, &mut self.save_revisions[index])),
         };
         match saved {
             Some(Ok(())) => {
@@ -734,11 +737,10 @@ impl Controller {
 
     fn confirm_missing_save_ownership(&mut self) {
         let index = self.active_index();
-        if self.dirty[index]
-            || self.pending_new_deal.is_none()
-            || !self.pending_new_deal_conflict
-        {
-            self.status = "Missing-save ownership can only be refreshed for a clean pending deal conflict".into();
+        if self.dirty[index] || self.pending_new_deal.is_none() || !self.pending_new_deal_conflict {
+            self.status =
+                "Missing-save ownership can only be refreshed for a clean pending deal conflict"
+                    .into();
             return;
         }
         let path = match self.active {
@@ -1046,13 +1048,11 @@ fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller
         let weak = app.as_weak();
         let controller = Rc::clone(&controller);
         app.on_discard_and_close_requested(move || {
-            {
-                let mut controller = controller.borrow_mut();
-                controller.discard_unsaved_and_close();
-                if let Some(app) = weak.upgrade() {
-                    render(&app, &controller);
-                    let _ = app.hide();
-                }
+            let mut controller = controller.borrow_mut();
+            controller.discard_unsaved_and_close();
+            if let Some(app) = weak.upgrade() {
+                render(&app, &controller);
+                let _ = app.hide();
             }
         });
     }
