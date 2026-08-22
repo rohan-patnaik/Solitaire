@@ -2,9 +2,9 @@
 
 Generated from `docs/offline-capabilities.json`; do not edit by hand.
 No parity score is claimed. Statuses describe evidence, not UI presence.
-Baseline evidence revision: `deec66f09fa9d3afda9831f6cf258da3d660b873`.
-Baseline CI: https://github.com/rohan-patnaik/Solitaire/actions/runs/32308668110.
-Current remediation exact-tip CI: pending.
+Baseline evidence revision: `df9f4f3cf4b49482f031ea5b890a117a31b93408`.
+Baseline CI: https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489.
+Current remediation exact-tip CI: `df9f4f3cf4b49482f031ea5b890a117a31b93408` at https://github.com/rohan-patnaik/Solitaire/actions/runs/32498442489 (success).
 
 | Status | Count |
 | --- | ---: |

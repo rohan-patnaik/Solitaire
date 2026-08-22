@@ -18,6 +18,14 @@ def load_and_validate():
         raise SystemExit("evidence_revision must be a full Git SHA")
     if not data.get("evidence_ci", "").startswith("https://github.com/"):
         raise SystemExit("evidence_ci must identify a GitHub Actions run")
+    current_tip_ci = data.get("current_tip_ci")
+    if current_tip_ci is not None:
+        if not re.fullmatch(r"[0-9a-f]{40}", current_tip_ci.get("revision", "")):
+            raise SystemExit("current_tip_ci revision must be a full Git SHA")
+        if not current_tip_ci.get("url", "").startswith("https://github.com/"):
+            raise SystemExit("current_tip_ci url must identify a GitHub Actions run")
+        if current_tip_ci.get("conclusion") not in {"success", "failure", "cancelled"}:
+            raise SystemExit("current_tip_ci conclusion must be explicit")
     rows = data["capabilities"]
     ids = [row["id"] for row in rows]
     if len(ids) != len(set(ids)):
@@ -44,7 +52,15 @@ def load_and_validate():
 
 def render(data, rows):
     counts = Counter(row["status"] for row in rows)
-    lines = ["# Offline capability catalog", "", "Generated from `docs/offline-capabilities.json`; do not edit by hand.", "No parity score is claimed. Statuses describe evidence, not UI presence.", f"Baseline evidence revision: `{data['evidence_revision']}`.", f"Baseline CI: {data['evidence_ci']}.", "Current remediation exact-tip CI: pending.", "", "| Status | Count |", "| --- | ---: |"]
+    current_tip_ci = data.get("current_tip_ci")
+    current_tip_line = "Current remediation exact-tip CI: not yet recorded."
+    if current_tip_ci is not None:
+        current_tip_line = (
+            "Current remediation exact-tip CI: "
+            f"`{current_tip_ci['revision']}` at {current_tip_ci['url']} "
+            f"({current_tip_ci['conclusion']})."
+        )
+    lines = ["# Offline capability catalog", "", "Generated from `docs/offline-capabilities.json`; do not edit by hand.", "No parity score is claimed. Statuses describe evidence, not UI presence.", f"Baseline evidence revision: `{data['evidence_revision']}`.", f"Baseline CI: {data['evidence_ci']}.", current_tip_line, "", "| Status | Count |", "| --- | ---: |"]
     for status in ("complete", "partial", "planned", "excluded"):
         lines.append(f"| {status.title()} | {counts[status]} |")
     lines += ["", "| ID | Capability | Status | Known limit |", "| --- | --- | --- | --- |"]

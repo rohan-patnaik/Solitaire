@@ -32,6 +32,19 @@ fn arch_ci_verifies_the_installed_revision() {
 }
 
 #[test]
+fn capability_catalog_renders_verified_current_tip_without_claiming_completion() {
+    let metadata = include_str!("../docs/offline-capabilities.json");
+    let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
+    let generator = include_str!("../scripts/generate_offline_capabilities.py");
+    assert!(metadata.contains("df9f4f3cf4b49482f031ea5b890a117a31b93408"));
+    assert!(metadata.contains("actions/runs/32498442489"));
+    assert!(metadata.contains("\"current_tip_ci\""));
+    assert!(generator.contains("data.get(\"current_tip_ci\")"));
+    assert!(generated.contains("Current remediation exact-tip CI:"));
+    assert!(generated.contains("| Complete | 0 |"));
+}
+
+#[test]
 fn card_keyboard_controls_ignore_repeat_and_show_focus() {
     let ui = include_str!("../ui/app.slint");
     assert_eq!(

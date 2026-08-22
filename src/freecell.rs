@@ -510,6 +510,29 @@ mod tests {
     }
 
     #[test]
+    fn legal_play_continues_beyond_the_undo_window_and_remains_replayable() {
+        let mut game = Game::new(44);
+        game.apply(Action {
+            from: Pile::Cascade(0),
+            to: Pile::FreeCell(0),
+            count: 1,
+        })
+        .unwrap();
+        for step in 0..(crate::replay::MAX_HISTORY_ACTIONS + 40) {
+            let (from, to) = if step % 2 == 0 {
+                (Pile::FreeCell(0), Pile::FreeCell(1))
+            } else {
+                (Pile::FreeCell(1), Pile::FreeCell(0))
+            };
+            game.apply(Action { from, to, count: 1 }).unwrap();
+        }
+
+        assert_eq!(game.undo.len(), crate::replay::MAX_HISTORY_ACTIONS);
+        assert!(game.replay().actions.len() > crate::replay::MAX_HISTORY_ACTIONS);
+        assert_eq!(Game::from_replay(&game.replay()).unwrap().state, game.state);
+    }
+
+    #[test]
     fn free_cells_hold_exactly_one_card() {
         let mut game = empty_game();
         game.state.cascades[0].push(card(Suit::Spades, Rank::Ace));
