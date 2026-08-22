@@ -260,7 +260,7 @@ impl Game {
     /// Returns [`MoveError`] when the requested action is illegal. The game is
     /// unchanged on error.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
-        if self.actions.len() >= crate::replay::MAX_HISTORY_ACTIONS {
+        if self.actions.len() >= crate::replay::MAX_REPLAY_ACTIONS {
             return Err(MoveError::ResourceLimit);
         }
         let before = self.state.clone();
@@ -268,7 +268,7 @@ impl Game {
             self.state = before;
             return Err(error);
         }
-        self.undo.push(before);
+        push_bounded_history(&mut self.undo, before);
         self.redo.clear();
         self.redo_actions.clear();
         self.actions.push(action);
@@ -300,7 +300,7 @@ impl Game {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(std::mem::replace(&mut self.state, next));
+        push_bounded_history(&mut self.undo, std::mem::replace(&mut self.state, next));
         if let Some(action) = self.redo_actions.pop() {
             self.actions.push(action);
         }
@@ -347,7 +347,7 @@ impl Game {
         Ok(game)
     }
 
-    /// Serializes the complete resumable game, including undo history.
+    /// Serializes the complete replay plus the bounded recent undo window.
     ///
     /// # Errors
     ///
@@ -371,14 +371,15 @@ impl Game {
     /// Returns [`ValidationError`] when any serialized state violates invariants.
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.state.validate()?;
-        if self.undo.len() != self.actions.len() {
+        if self.undo.len() > self.actions.len() {
             return Err(ValidationError::UndoActionCardinality);
         }
         if self.redo.len() != self.redo_actions.len() {
             return Err(ValidationError::RedoActionCardinality);
         }
         if self.actions.len().saturating_add(self.redo_actions.len())
-            > crate::replay::MAX_HISTORY_ACTIONS
+            > crate::replay::MAX_REPLAY_ACTIONS
+            || self.undo.len().saturating_add(self.redo.len()) > crate::replay::MAX_HISTORY_ACTIONS
         {
             return Err(ValidationError::HistoryLimit);
         }
@@ -386,8 +387,11 @@ impl Game {
             state.validate()?;
         }
         let mut cursor = Self::new(self.state.seed, self.state.options);
-        for (action, expected_before) in self.actions.iter().zip(&self.undo) {
-            if !states_equivalent(&cursor.state, expected_before) {
+        let retained_history_start = self.actions.len() - self.undo.len();
+        for (index, action) in self.actions.iter().enumerate() {
+            if index >= retained_history_start
+                && !states_equivalent(&cursor.state, &self.undo[index - retained_history_start])
+            {
                 return Err(ValidationError::InvalidUndoTransition);
             }
             cursor
@@ -730,6 +734,13 @@ impl Game {
     }
 }
 
+fn push_bounded_history(history: &mut Vec<State>, state: State) {
+    if history.len() == crate::replay::MAX_HISTORY_ACTIONS {
+        history.remove(0);
+    }
+    history.push(state);
+}
+
 fn valid_tableau_run(cards: &[Card]) -> bool {
     cards.windows(2).all(|pair| {
         pair[0].color() != pair[1].color() && pair[0].rank.descending_from(pair[1].rank)
@@ -880,12 +891,40 @@ mod tests {
     }
 
     #[test]
-    fn bounded_history_rejects_an_additional_action_before_mutation() {
+    fn replay_limit_rejects_an_additional_action_before_mutation() {
         let mut game = Game::new(11, Options::default());
-        game.actions = vec![Action::Draw; crate::replay::MAX_HISTORY_ACTIONS];
+        game.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS];
         let before = game.state.clone();
         assert_eq!(game.apply(Action::Draw), Err(MoveError::ResourceLimit));
         assert_eq!(game.state, before);
+    }
+
+    #[test]
+    fn play_continues_past_the_bounded_undo_window_and_replay_stays_valid() {
+        let mut game = Game::new(12, Options::default());
+        let target = crate::replay::MAX_HISTORY_ACTIONS + 40;
+        while game.actions.len() < target {
+            let action = if game.state.stock.is_empty() {
+                Action::Recycle
+            } else {
+                Action::Draw
+            };
+            game.apply(action).unwrap();
+        }
+
+        assert_eq!(game.undo.len(), crate::replay::MAX_HISTORY_ACTIONS);
+        game.validate().unwrap();
+        assert_eq!(Game::from_replay(&game.replay()).unwrap().state, game.state);
+
+        for _ in 0..crate::replay::MAX_HISTORY_ACTIONS {
+            assert!(game.undo());
+        }
+        assert!(!game.undo(), "only the bounded recent window is undoable");
+        assert_eq!(
+            game.actions.len(),
+            target - crate::replay::MAX_HISTORY_ACTIONS
+        );
+        game.validate().unwrap();
     }
 
     #[test]

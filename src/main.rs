@@ -1227,6 +1227,9 @@ fn friendly_error(error: solitaire::klondike::MoveError) -> String {
         }
         MoveError::FaceDownCard => "Face-down cards cannot move".into(),
         MoveError::BrokenRun => "That group is not a complete alternating run".into(),
+        MoveError::ResourceLimit => {
+            "This deal reached the 4096-action replay limit; start a new deal to continue".into()
+        }
         _ => "That move is not available".into(),
     }
 }
@@ -1240,6 +1243,9 @@ fn friendly_spider_error(error: spider::MoveError) -> String {
         spider::MoveError::BrokenRun => "Only a descending same-suit run can move together".into(),
         spider::MoveError::InvalidDestination => {
             "Build downward by rank, or move onto an empty column".into()
+        }
+        spider::MoveError::ResourceLimit => {
+            "This deal reached the 4096-action replay limit; start a new deal to continue".into()
         }
         _ => "That Spider move is not available".into(),
     }
@@ -1256,6 +1262,9 @@ fn friendly_freecell_error(error: freecell::MoveError) -> String {
         freecell::MoveError::OccupiedFreeCell => "That free cell is occupied".into(),
         freecell::MoveError::InvalidFoundation => {
             "Foundations build upward by suit, starting with aces".into()
+        }
+        freecell::MoveError::ResourceLimit => {
+            "This deal reached the 4096-action replay limit; start a new deal to continue".into()
         }
         _ => "That FreeCell move is not available".into(),
     }

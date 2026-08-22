@@ -101,7 +101,7 @@ impl Game {
     /// Returns [`MoveError`] if the source, destination, run, or supermove is
     /// illegal.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
-        if self.actions.len() >= crate::replay::MAX_HISTORY_ACTIONS {
+        if self.actions.len() >= crate::replay::MAX_REPLAY_ACTIONS {
             return Err(MoveError::ResourceLimit);
         }
         let before = self.state.clone();
@@ -109,7 +109,7 @@ impl Game {
             self.state = before;
             return Err(error);
         }
-        self.undo.push(before);
+        push_bounded_history(&mut self.undo, before);
         self.redo.clear();
         self.actions.push(action);
         self.redo_actions.clear();
@@ -131,7 +131,7 @@ impl Game {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(std::mem::replace(&mut self.state, next));
+        push_bounded_history(&mut self.undo, std::mem::replace(&mut self.state, next));
         if let Some(action) = self.redo_actions.pop() {
             self.actions.push(action);
         }
@@ -389,6 +389,13 @@ impl Game {
     }
 }
 
+fn push_bounded_history(history: &mut Vec<State>, state: State) {
+    if history.len() == crate::replay::MAX_HISTORY_ACTIONS {
+        history.remove(0);
+    }
+    history.push(state);
+}
+
 fn alternating_run(cards: &[Card]) -> bool {
     cards.windows(2).all(|pair| {
         pair[0].color() != pair[1].color() && pair[0].rank.value() == pair[1].rank.value() + 1
@@ -618,6 +625,20 @@ mod tests {
         assert!(game.can_redo());
         assert!(game.redo());
         assert_eq!(Game::from_replay(&replay).unwrap().state, game.state);
+    }
+
+    #[test]
+    fn replay_limit_is_independent_from_the_undo_window() {
+        let mut game = Game::new(44);
+        let action = Action {
+            from: Pile::Cascade(0),
+            to: Pile::FreeCell(0),
+            count: 1,
+        };
+        game.actions = vec![action; crate::replay::MAX_REPLAY_ACTIONS];
+        let before = game.state.clone();
+        assert_eq!(game.apply(action), Err(MoveError::ResourceLimit));
+        assert_eq!(game.state, before);
     }
 
     #[test]
