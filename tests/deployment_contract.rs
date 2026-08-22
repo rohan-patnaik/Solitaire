@@ -46,15 +46,16 @@ fn arch_ci_verifies_the_installed_revision() {
 }
 
 #[test]
-fn capability_catalog_renders_verified_current_tip_without_claiming_completion() {
+fn capability_catalog_distinguishes_baseline_from_unpublished_current_tip() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
     assert!(metadata.contains("df9f4f3cf4b49482f031ea5b890a117a31b93408"));
     assert!(metadata.contains("actions/runs/32498442489"));
-    assert!(metadata.contains("\"current_tip_ci\""));
+    assert!(metadata.contains("\"current_tip_ci\": null"));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Current remediation exact-tip CI:"));
+    assert!(generated.contains("Current remediation exact-tip CI: not yet recorded."));
     assert!(generated.contains("| Complete | 0 |"));
 }
 
@@ -97,12 +98,16 @@ fn unsaved_changes_have_retry_and_close_warning_contracts() {
     assert!(ui.contains("callback cancel-new-deal-requested"));
     assert!(ui.contains("callback discard-and-close-requested"));
     assert!(ui.contains("has-any-unsaved-changes"));
+    assert!(ui.contains("has-pending-save-conflict"));
     assert!(ui.contains("Retry saving changes kept in memory"));
     assert!(ui.contains("Discard current unsaved progress and start the pending new deal"));
     assert!(ui.contains("Cancel the pending new deal and preserve the current game"));
     assert!(ui.contains("Discard all unsaved progress and close Solitaire"));
     assert!(ui.contains("Discard in-memory changes and reload the newer disk copy"));
+    assert!(ui.contains("Reload the newer disk copy and resolve pending new deal ownership"));
     assert!(controller.contains("CloseRequestResponse::KeepWindowShown"));
     assert!(controller.contains("Unsaved changes remain"));
     assert!(controller.contains("commit_pending_new_deal"));
+    assert!(controller.contains("on-disk entry now contains the current game"));
+    assert!(controller.contains("the original path is gone"));
 }
