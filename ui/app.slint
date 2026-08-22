@@ -149,6 +149,7 @@ export component AppWindow inherits Window {
     callback retry-save-requested;
     callback discard-progress-and-start-requested;
     callback cancel-new-deal-requested;
+    callback confirm-missing-save-requested;
     callback discard-and-close-requested;
     callback reload-disk-requested;
     pure callback fan-spacing(int, float) -> float;
@@ -248,6 +249,11 @@ export component AppWindow inherits Window {
                 text: "Cancel new deal";
                 accessible-label: "Cancel the pending new deal and preserve the current game";
                 clicked => { root.cancel-new-deal-requested(); }
+            }
+            if root.has-pending-save-conflict: Button {
+                text: "Confirm missing save";
+                accessible-label: "Refresh ownership only if a locked recheck confirms the save is missing";
+                clicked => { root.confirm-missing-save-requested(); }
             }
             if root.has-any-unsaved-changes: Button {
                 text: "Discard and close";

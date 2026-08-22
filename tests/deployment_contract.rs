@@ -96,12 +96,14 @@ fn unsaved_changes_have_retry_and_close_warning_contracts() {
     assert!(ui.contains("callback retry-save-requested"));
     assert!(ui.contains("callback discard-progress-and-start-requested"));
     assert!(ui.contains("callback cancel-new-deal-requested"));
+    assert!(ui.contains("callback confirm-missing-save-requested"));
     assert!(ui.contains("callback discard-and-close-requested"));
     assert!(ui.contains("has-any-unsaved-changes"));
     assert!(ui.contains("has-pending-save-conflict"));
     assert!(ui.contains("Retry saving changes kept in memory"));
     assert!(ui.contains("Discard current unsaved progress and start the pending new deal"));
     assert!(ui.contains("Cancel the pending new deal and preserve the current game"));
+    assert!(ui.contains("Refresh ownership only if a locked recheck confirms the save is missing"));
     assert!(ui.contains("Discard all unsaved progress and close Solitaire"));
     assert!(ui.contains("Discard in-memory changes and reload the newer disk copy"));
     assert!(ui.contains("Reload the newer disk copy and resolve pending new deal ownership"));

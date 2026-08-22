@@ -3,9 +3,10 @@ use solitaire::cards::{Card, Rank, Suit};
 use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
-    DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, default_deal_counters_path,
-    default_freecell_save_path, default_save_path, default_spider_save_path, load_deal_counters,
-    load_freecell_revisioned, load_klondike_revisioned, load_spider_revisioned,
+    DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
+    default_deal_counters_path, default_freecell_save_path, default_save_path,
+    default_spider_save_path, load_deal_counters, load_freecell_revisioned,
+    load_klondike_revisioned, load_spider_revisioned,
     recover_freecell_revisioned, recover_klondike_revisioned, recover_spider_revisioned,
     reserve_deal, save_freecell_checked, save_klondike_checked, save_spider_checked,
 };
@@ -731,6 +732,41 @@ impl Controller {
         }
     }
 
+    fn confirm_missing_save_ownership(&mut self) {
+        let index = self.active_index();
+        if self.dirty[index]
+            || self.pending_new_deal.is_none()
+            || !self.pending_new_deal_conflict
+        {
+            self.status = "Missing-save ownership can only be refreshed for a clean pending deal conflict".into();
+            return;
+        }
+        let path = match self.active {
+            GameKind::Klondike => self.save_path.as_deref(),
+            GameKind::Spider => self.spider_save_path.as_deref(),
+            GameKind::FreeCell => self.freecell_save_path.as_deref(),
+        };
+        let Some(path) = path else {
+            self.status = "No save path is available; ownership was not changed".into();
+            return;
+        };
+        match confirm_current_save_revision(path) {
+            Ok(None) => {
+                self.save_revisions[index] = None;
+                self.pending_new_deal_conflict = false;
+                self.status = "Confirmed under lock that the save is missing; ownership was refreshed. Retry or cancel the pending new deal.".into();
+            }
+            Ok(Some(_)) => {
+                self.status = "The save path still exists; ownership was not changed. Reload the disk copy or cancel the pending new deal.".into();
+            }
+            Err(error) => {
+                self.status = format!(
+                    "Could not confirm that the save is missing; ownership was not changed: {error}"
+                );
+            }
+        }
+    }
+
     fn discard_unsaved_and_close(&mut self) {
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
@@ -993,6 +1029,17 @@ fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller
         let controller = Rc::clone(&controller);
         app.on_cancel_new_deal_requested(move || {
             update(&weak, &controller, Controller::cancel_pending_new_deal);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_confirm_missing_save_requested(move || {
+            update(
+                &weak,
+                &controller,
+                Controller::confirm_missing_save_ownership,
+            );
         });
     }
     {
@@ -1663,6 +1710,70 @@ mod tests {
         assert_eq!(controller.game.state.options.draw_mode, DrawMode::Three);
         let (saved, _) = load_klondike_revisioned(&path).unwrap();
         assert_eq!(saved, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn deleted_save_conflict_requires_confirmation_before_retry() {
+        let path = test_save("deleted-pending-conflict");
+        remove_save(&path);
+        let mut controller = controller(360);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        fs::remove_file(&path).unwrap();
+
+        controller.new_game("Draw 1");
+        assert!(controller.pending_new_deal_conflict);
+        assert!(controller.save_revisions[0].is_some());
+
+        controller.confirm_missing_save_ownership();
+        assert!(!controller.pending_new_deal_conflict);
+        assert_eq!(controller.save_revisions[0], None);
+        assert!(controller.status.contains("Confirmed under lock"));
+
+        controller.retry_save();
+        assert!(controller.pending_new_deal.is_none());
+        assert!(!controller.dirty[0]);
+        let (saved, _) = load_klondike_revisioned(&path).unwrap();
+        assert_eq!(saved, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn quarantined_save_conflict_fails_closed_until_absence_is_confirmed() {
+        let path = test_save("quarantined-pending-conflict");
+        remove_save(&path);
+        let mut controller = controller(370);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        fs::write(&path, b"malformed competing save").unwrap();
+
+        controller.new_game("Draw 3");
+        assert!(controller.pending_new_deal_conflict);
+        let stale_revision = controller.save_revisions[0];
+        controller.confirm_missing_save_ownership();
+        assert!(controller.pending_new_deal_conflict);
+        assert_eq!(controller.save_revisions[0], stale_revision);
+        assert!(controller.status.contains("still exists"));
+
+        let quarantine = solitaire::persistence::quarantine_save(&path).unwrap();
+        let quarantined = match quarantine {
+            solitaire::persistence::NamespaceMutation::Durable(path)
+            | solitaire::persistence::NamespaceMutation::CommittedButNotDurable {
+                value: path,
+                ..
+            } => path,
+        };
+        controller.confirm_missing_save_ownership();
+        assert!(!controller.pending_new_deal_conflict);
+        assert_eq!(controller.save_revisions[0], None);
+
+        controller.retry_save();
+        assert!(controller.pending_new_deal.is_none());
+        assert!(!controller.dirty[0]);
+        let (saved, _) = load_klondike_revisioned(&path).unwrap();
+        assert_eq!(saved, controller.game);
+        fs::remove_file(quarantined).unwrap();
         remove_save(&path);
     }
 

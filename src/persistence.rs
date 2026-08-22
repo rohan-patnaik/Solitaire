@@ -195,6 +195,18 @@ pub fn current_save_revision(path: &Path) -> Result<Option<SaveRevision>, SaveEr
     }
 }
 
+/// Rechecks save ownership under the same bounded inter-process lock used by writers.
+///
+/// A missing path returns `None`. Existing malformed content still returns its revision, while
+/// permission and other I/O failures remain errors so callers cannot assume ownership.
+///
+/// # Errors
+/// Returns a bounded lock or I/O error when absence cannot be confirmed safely.
+pub fn confirm_current_save_revision(path: &Path) -> Result<Option<SaveRevision>, SaveError> {
+    let _lock = SaveLock::acquire(path)?;
+    current_save_revision(path)
+}
+
 /// Saves Klondike only if the on-disk revision still matches `expected`.
 ///
 /// # Errors
