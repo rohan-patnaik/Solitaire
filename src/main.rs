@@ -5,12 +5,14 @@ use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
     DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
     default_deal_counters_path, default_freecell_save_path, default_save_path,
-    default_spider_save_path, load_deal_counters, load_freecell_revisioned,
-    load_klondike_revisioned, load_spider_revisioned, recover_freecell_revisioned,
-    recover_klondike_revisioned, recover_spider_revisioned, reserve_deal, save_freecell_checked,
-    save_klondike_checked, save_spider_checked,
+    default_spider_save_path, default_tripeaks_save_path, load_deal_counters,
+    load_freecell_revisioned, load_klondike_revisioned, load_spider_revisioned,
+    load_tripeaks_revisioned, recover_freecell_revisioned, recover_klondike_revisioned,
+    recover_spider_revisioned, recover_tripeaks_revisioned, reserve_deal, save_freecell_checked,
+    save_klondike_checked, save_spider_checked, save_tripeaks_checked,
 };
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
+use solitaire::tripeaks::{self, Game as TriPeaksGame};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -30,6 +32,7 @@ enum GameKind {
     Klondike,
     Spider,
     FreeCell,
+    TriPeaks,
 }
 
 struct PendingNewDeal {
@@ -41,6 +44,7 @@ enum ProspectiveGame {
     Klondike(Game),
     Spider(SpiderGame),
     FreeCell(FreeCellGame),
+    TriPeaks(TriPeaksGame),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,8 +87,10 @@ struct Controller {
     freecell: FreeCellGame,
     freecell_selection: Option<FreeCellSelection>,
     freecell_save_path: Option<PathBuf>,
-    save_revisions: [Option<SaveRevision>; 3],
-    dirty: [bool; 3],
+    tripeaks: TriPeaksGame,
+    tripeaks_save_path: Option<PathBuf>,
+    save_revisions: [Option<SaveRevision>; 4],
+    dirty: [bool; 4],
     pending_new_deal: Option<PendingNewDeal>,
     pending_new_deal_conflict: bool,
     deal_counters_path: Option<PathBuf>,
@@ -121,6 +127,21 @@ impl Controller {
             || (FreeCellGame::new(seed.wrapping_add(2)), None),
             |(game, revision)| (game, Some(revision)),
         );
+        let mut tripeaks_save_path = default_tripeaks_save_path();
+        let (tripeaks, tripeaks_revision) = load_or_recover(
+            &mut tripeaks_save_path,
+            recover_tripeaks_revisioned,
+            &mut status,
+        )
+        .map_or_else(
+            || {
+                (
+                    TriPeaksGame::new(seed.wrapping_add(3), tripeaks::Options::default()),
+                    None,
+                )
+            },
+            |(game, revision)| (game, Some(revision)),
+        );
         let deal_counters_path = default_deal_counters_path();
         let defaults = DealCounters {
             klondike: saved
@@ -129,6 +150,7 @@ impl Controller {
                 .saturating_add(1),
             spider: spider.state.seed.saturating_add(1),
             freecell: freecell.state.deal_number.saturating_add(1),
+            tripeaks: tripeaks.state.seed.saturating_add(1),
         };
         let mut next_seeds = deal_counters_path
             .as_deref()
@@ -146,7 +168,13 @@ impl Controller {
         next_seeds.klondike = next_seeds.klondike.max(defaults.klondike);
         next_seeds.spider = next_seeds.spider.max(defaults.spider);
         next_seeds.freecell = next_seeds.freecell.max(defaults.freecell);
-        let save_revisions = [klondike_revision, spider_revision, freecell_revision];
+        next_seeds.tripeaks = next_seeds.tripeaks.max(defaults.tripeaks);
+        let save_revisions = [
+            klondike_revision,
+            spider_revision,
+            freecell_revision,
+            tripeaks_revision,
+        ];
         Self {
             active: GameKind::Klondike,
             game: saved.map_or_else(|| Game::new(seed, Options::default()), |(game, _)| game),
@@ -158,8 +186,10 @@ impl Controller {
             freecell,
             freecell_selection: None,
             freecell_save_path,
+            tripeaks,
+            tripeaks_save_path,
             save_revisions,
-            dirty: [false; 3],
+            dirty: [false; 4],
             pending_new_deal: None,
             pending_new_deal_conflict: false,
             deal_counters_path,
@@ -274,6 +304,7 @@ impl Controller {
         self.active = match game {
             "Spider" => GameKind::Spider,
             "FreeCell" => GameKind::FreeCell,
+            "TriPeaks" => GameKind::TriPeaks,
             _ => GameKind::Klondike,
         };
         self.selection = None;
@@ -338,6 +369,9 @@ impl Controller {
                 ProspectiveGame::Spider(SpiderGame::new(seed, mode))
             }
             GameKind::FreeCell => ProspectiveGame::FreeCell(FreeCellGame::new(seed)),
+            GameKind::TriPeaks => {
+                ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options::default()))
+            }
         };
         let index = self.active_index();
         let saved = match &candidate {
@@ -353,25 +387,21 @@ impl Controller {
                 .freecell_save_path
                 .as_deref()
                 .map(|path| save_freecell_checked(path, game, &mut self.save_revisions[index])),
+            ProspectiveGame::TriPeaks(game) => self
+                .tripeaks_save_path
+                .as_deref()
+                .map(|path| save_tripeaks_checked(path, game, &mut self.save_revisions[index])),
         };
         match saved {
             Some(Ok(())) => {
-                match candidate {
-                    ProspectiveGame::Klondike(game) => self.game = game,
-                    ProspectiveGame::Spider(game) => self.spider = game,
-                    ProspectiveGame::FreeCell(game) => self.freecell = game,
-                }
+                self.replace_game(candidate);
                 self.dirty[index] = false;
                 self.pending_new_deal_conflict = false;
                 self.clear_selections();
                 self.status = format!("New {} deal", self.game_name());
             }
             Some(Err(error)) if error.committed_but_not_durable() => {
-                match candidate {
-                    ProspectiveGame::Klondike(game) => self.game = game,
-                    ProspectiveGame::Spider(game) => self.spider = game,
-                    ProspectiveGame::FreeCell(game) => self.freecell = game,
-                }
+                self.replace_game(candidate);
                 self.dirty[index] = true;
                 self.pending_new_deal_conflict = false;
                 self.clear_selections();
@@ -394,11 +424,21 @@ impl Controller {
         }
     }
 
+    fn replace_game(&mut self, candidate: ProspectiveGame) {
+        match candidate {
+            ProspectiveGame::Klondike(game) => self.game = game,
+            ProspectiveGame::Spider(game) => self.spider = game,
+            ProspectiveGame::FreeCell(game) => self.freecell = game,
+            ProspectiveGame::TriPeaks(game) => self.tripeaks = game,
+        }
+    }
+
     fn take_next_seed(&mut self, game: GameKind) -> Option<u64> {
         let kind = match game {
             GameKind::Klondike => DealKind::Klondike,
             GameKind::Spider => DealKind::Spider,
             GameKind::FreeCell => DealKind::FreeCell,
+            GameKind::TriPeaks => DealKind::TriPeaks,
         };
         if let Some(path) = self.deal_counters_path.as_deref() {
             match reserve_deal(path, self.next_seeds, kind) {
@@ -416,12 +456,14 @@ impl Controller {
             GameKind::Klondike => self.next_seeds.klondike,
             GameKind::Spider => self.next_seeds.spider,
             GameKind::FreeCell => self.next_seeds.freecell,
+            GameKind::TriPeaks => self.next_seeds.tripeaks,
         };
         let next = seed.checked_add(1)?;
         match game {
             GameKind::Klondike => self.next_seeds.klondike = next,
             GameKind::Spider => self.next_seeds.spider = next,
             GameKind::FreeCell => self.next_seeds.freecell = next,
+            GameKind::TriPeaks => self.next_seeds.tripeaks = next,
         }
         Some(seed)
     }
@@ -437,6 +479,9 @@ impl Controller {
             }),
             GameKind::FreeCell => self.freecell_save_path.as_deref().map(|path| {
                 save_freecell_checked(path, &self.freecell, &mut self.save_revisions[index])
+            }),
+            GameKind::TriPeaks => self.tripeaks_save_path.as_deref().map(|path| {
+                save_tripeaks_checked(path, &self.tripeaks, &mut self.save_revisions[index])
             }),
         };
         match result {
@@ -477,6 +522,7 @@ impl Controller {
             GameKind::Klondike => 0,
             GameKind::Spider => 1,
             GameKind::FreeCell => 2,
+            GameKind::TriPeaks => 3,
         }
     }
 
@@ -485,6 +531,7 @@ impl Controller {
             GameKind::Klondike => "Klondike",
             GameKind::Spider => "Spider",
             GameKind::FreeCell => "FreeCell",
+            GameKind::TriPeaks => "TriPeaks",
         }
     }
 
@@ -628,12 +675,38 @@ impl Controller {
         self.activate_freecell_pile(freecell::Pile::Foundation(suit), 1);
     }
 
+    fn apply_tripeaks(&mut self, action: tripeaks::Action) {
+        match self.tripeaks.apply(action) {
+            Ok(()) => {
+                self.status = if self.tripeaks.state.is_won() {
+                    "TriPeaks complete — all three peaks are clear".into()
+                } else {
+                    "Move accepted".into()
+                };
+                self.persist_mutation();
+            }
+            Err(error) => self.status = friendly_tripeaks_error(error),
+        }
+    }
+
+    fn activate_tripeaks_card(&mut self, index: i32) {
+        let Ok(index) = u8::try_from(index) else {
+            return;
+        };
+        self.apply_tripeaks(tripeaks::Action::Remove(index));
+    }
+
+    fn draw_tripeaks_stock(&mut self) {
+        self.apply_tripeaks(tripeaks::Action::Draw);
+    }
+
     fn undo(&mut self) {
         self.clear_selections();
         let changed = match self.active {
             GameKind::Klondike => self.game.undo(),
             GameKind::Spider => self.spider.undo(),
             GameKind::FreeCell => self.freecell.undo(),
+            GameKind::TriPeaks => self.tripeaks.undo(),
         };
         self.status = if changed {
             self.status = "Move undone".into();
@@ -650,6 +723,7 @@ impl Controller {
             GameKind::Klondike => self.game.redo(),
             GameKind::Spider => self.spider.redo(),
             GameKind::FreeCell => self.freecell.redo(),
+            GameKind::TriPeaks => self.tripeaks.redo(),
         };
         self.status = if changed {
             self.status = "Move restored".into();
@@ -673,6 +747,10 @@ impl Controller {
             GameKind::FreeCell => self.freecell.hint().map_or_else(
                 || "No immediate move found; undo or start a new deal".into(),
                 |action| format!("Try {}", describe_freecell_action(action)),
+            ),
+            GameKind::TriPeaks => self.tripeaks.hint().map_or_else(
+                || "No move remains; undo or start a new deal".into(),
+                |action| format!("Try {}", describe_tripeaks_action(action)),
             ),
         };
     }
@@ -698,6 +776,7 @@ impl Controller {
             GameKind::Klondike => self.game.can_undo(),
             GameKind::Spider => self.spider.can_undo(),
             GameKind::FreeCell => self.freecell.can_undo(),
+            GameKind::TriPeaks => self.tripeaks.can_undo(),
         }
     }
 
@@ -706,6 +785,7 @@ impl Controller {
             GameKind::Klondike => self.game.can_redo(),
             GameKind::Spider => self.spider.can_redo(),
             GameKind::FreeCell => self.freecell.can_redo(),
+            GameKind::TriPeaks => self.tripeaks.can_redo(),
         }
     }
 
@@ -747,6 +827,7 @@ impl Controller {
             GameKind::Klondike => self.save_path.as_deref(),
             GameKind::Spider => self.spider_save_path.as_deref(),
             GameKind::FreeCell => self.freecell_save_path.as_deref(),
+            GameKind::TriPeaks => self.tripeaks_save_path.as_deref(),
         };
         let Some(path) = path else {
             self.status = "No save path is available; ownership was not changed".into();
@@ -772,7 +853,7 @@ impl Controller {
     fn discard_unsaved_and_close(&mut self) {
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
-        self.dirty = [false; 3];
+        self.dirty = [false; 4];
         self.status = "Unsaved progress discarded; closing".into();
     }
 
@@ -793,6 +874,12 @@ impl Controller {
             GameKind::FreeCell => self.freecell_save_path.clone().map(|path| {
                 load_freecell_revisioned(&path).map(|(game, revision)| {
                     self.freecell = game;
+                    revision
+                })
+            }),
+            GameKind::TriPeaks => self.tripeaks_save_path.clone().map(|path| {
+                load_tripeaks_revisioned(&path).map(|(game, revision)| {
+                    self.tripeaks = game;
                     revision
                 })
             }),
@@ -860,6 +947,7 @@ fn load_or_recover<T>(
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
     app.on_fan_spacing(bounded_fan_spacing);
+    app.on_tripeaks_x(tripeaks_x);
     let controller = Rc::new(RefCell::new(Controller::new()));
     {
         let weak = app.as_weak();
@@ -966,6 +1054,22 @@ fn register_spider_freecell_handlers(app: &AppWindow, controller: &Rc<RefCell<Co
         app.on_freecell_foundation_activated(move |index| {
             update(&weak, &controller, |state| {
                 state.activate_freecell_foundation(index);
+            });
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_tripeaks_draw_stock(move || {
+            update(&weak, &controller, Controller::draw_tripeaks_stock);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_tripeaks_tableau_activated(move |index| {
+            update(&weak, &controller, |state| {
+                state.activate_tripeaks_card(index);
             });
         });
     }
@@ -1090,6 +1194,7 @@ fn render(app: &AppWindow, controller: &Controller) {
         GameKind::Klondike => render_klondike(app, controller),
         GameKind::Spider => render_spider(app, controller),
         GameKind::FreeCell => render_freecell(app, controller),
+        GameKind::TriPeaks => render_tripeaks(app, controller),
     }
 }
 
@@ -1155,6 +1260,7 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_completed_runs(0);
     app.set_free_cells(ModelRc::default());
     app.set_free_cell_occupied(ModelRc::default());
+    app.set_tripeaks_cards(ModelRc::default());
     app.set_longest_column(longest_column(&state.tableau));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
 }
@@ -1185,6 +1291,7 @@ fn render_spider(app: &AppWindow, controller: &Controller) {
     app.set_foundations(ModelRc::default());
     app.set_free_cells(ModelRc::default());
     app.set_free_cell_occupied(ModelRc::default());
+    app.set_tripeaks_cards(ModelRc::default());
     app.set_has_waste(false);
     app.set_stock_count(i32::try_from(state.stock.len()).unwrap_or_default());
     app.set_score(state.score);
@@ -1244,6 +1351,7 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
             .map(Option::is_some)
             .collect::<Vec<_>>(),
     )));
+    app.set_tripeaks_cards(ModelRc::default());
     let foundations = Suit::ALL
         .into_iter()
         .map(|suit| {
@@ -1273,6 +1381,54 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
     app.set_deal_id(i32::try_from(state.deal_number).unwrap_or(i32::MAX));
 }
 
+fn render_tripeaks(app: &AppWindow, controller: &Controller) {
+    let state = &controller.tripeaks.state;
+    let cards = state
+        .tableau
+        .iter()
+        .enumerate()
+        .map(|(index, card)| {
+            let present = card.is_some();
+            let exposed = state.is_exposed(index);
+            let card = card.unwrap_or(Card::new(Suit::Clubs, Rank::Ace));
+            let position = index + 1;
+            let label = if exposed {
+                format!("{}, tableau position {position}, exposed", card_name(card))
+            } else {
+                format!("{}, tableau position {position}, covered", card_name(card))
+            };
+            UiTriPeaksCard {
+                card: ui_card_labeled(card, label),
+                present,
+            }
+        })
+        .collect::<Vec<_>>();
+    app.set_tripeaks_cards(ModelRc::new(VecModel::from(cards)));
+    app.set_columns(ModelRc::default());
+    app.set_foundations(ModelRc::default());
+    app.set_free_cells(ModelRc::default());
+    app.set_free_cell_occupied(ModelRc::default());
+    if let Some(card) = state.waste.last() {
+        app.set_has_waste(true);
+        app.set_waste_card(ui_card_labeled(
+            *card,
+            format!(
+                "Waste card, {}; activate to draw the next stock card",
+                card_name(*card)
+            ),
+        ));
+    } else {
+        app.set_has_waste(false);
+        app.set_waste_card(ui_card(Card::new(Suit::Clubs, Rank::Ace), false, false));
+    }
+    app.set_stock_count(i32::try_from(state.stock.len()).unwrap_or_default());
+    app.set_score(i32::try_from(state.score).unwrap_or(i32::MAX));
+    app.set_moves(i32::try_from(state.moves).unwrap_or(i32::MAX));
+    app.set_completed_runs(0);
+    app.set_longest_column(0);
+    app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
+}
+
 fn longest_column<T, const N: usize>(columns: &[Vec<T>; N]) -> i32 {
     columns
         .iter()
@@ -1297,6 +1453,16 @@ fn ui_card(card: Card, face_up: bool, selected: bool) -> UiCard {
         } else {
             "Face-down card".into()
         },
+    }
+}
+
+fn ui_card_labeled(card: Card, accessible_label: String) -> UiCard {
+    UiCard {
+        label: card_label(card).into(),
+        red: matches!(card.suit, Suit::Diamonds | Suit::Hearts),
+        face_up: true,
+        selected: false,
+        accessible_label: accessible_label.into(),
     }
 }
 
@@ -1427,6 +1593,15 @@ fn describe_freecell_action(action: freecell::Action) -> String {
     )
 }
 
+fn describe_tripeaks_action(action: tripeaks::Action) -> String {
+    match action {
+        tripeaks::Action::Draw => "drawing the next stock card".into(),
+        tripeaks::Action::Remove(index) => {
+            format!("removing exposed tableau card {}", index + 1)
+        }
+    }
+}
+
 fn friendly_error(error: solitaire::klondike::MoveError) -> String {
     use solitaire::klondike::MoveError;
     match error {
@@ -1484,6 +1659,23 @@ fn friendly_freecell_error(error: freecell::MoveError) -> String {
     }
 }
 
+fn friendly_tripeaks_error(error: tripeaks::MoveError) -> String {
+    match error {
+        tripeaks::MoveError::EmptyStock => "The TriPeaks stock is empty".into(),
+        tripeaks::MoveError::CoveredCard => "That tableau card is still covered".into(),
+        tripeaks::MoveError::NotAdjacent => {
+            "Choose an exposed card one rank above or below the waste".into()
+        }
+        tripeaks::MoveError::ResourceLimit => {
+            "This deal reached the 4096-action replay limit; start a new deal to continue".into()
+        }
+        tripeaks::MoveError::CounterOverflow => {
+            "This deal reached a numeric limit; the move was not applied".into()
+        }
+        _ => "That TriPeaks move is not available".into(),
+    }
+}
+
 fn bounded_fan_spacing(card_count: i32, available_height: f32) -> f32 {
     const CARD_HEIGHT: f32 = 142.0;
     const MIN_SPACING: f32 = 1.0;
@@ -1493,6 +1685,25 @@ fn bounded_fan_spacing(card_count: i32, available_height: f32) -> f32 {
     }
     let divisor = i16::try_from(card_count - 1).unwrap_or(i16::MAX);
     ((available_height - CARD_HEIGHT) / f32::from(divisor)).clamp(MIN_SPACING, MAX_SPACING)
+}
+
+fn tripeaks_x(index: i32, available_width: f32) -> f32 {
+    let step = ((available_width - 104.0) / 9.0).max(0.0);
+    let slot = match index {
+        0 => 1.5,
+        1 => 4.5,
+        2 => 7.5,
+        3 => 1.0,
+        4 => 2.0,
+        5 => 4.0,
+        6 => 5.0,
+        7 => 7.0,
+        8 => 8.0,
+        9..=17 => f32::from(i16::try_from(index - 9).unwrap_or_default()) + 0.5,
+        18..=27 => f32::from(i16::try_from(index - 18).unwrap_or_default()),
+        _ => 0.0,
+    };
+    slot * step
 }
 
 fn to_u8(value: usize) -> u8 {
@@ -1528,8 +1739,10 @@ mod tests {
             freecell: FreeCellGame::new(seed),
             freecell_selection: None,
             freecell_save_path: None,
-            save_revisions: [None; 3],
-            dirty: [false; 3],
+            tripeaks: TriPeaksGame::new(seed, tripeaks::Options::default()),
+            tripeaks_save_path: None,
+            save_revisions: [None; 4],
+            dirty: [false; 4],
             pending_new_deal: None,
             pending_new_deal_conflict: false,
             deal_counters_path: None,
@@ -1537,6 +1750,7 @@ mod tests {
                 klondike: seed.saturating_add(1),
                 spider: seed.saturating_add(1),
                 freecell: seed.saturating_add(1),
+                tripeaks: seed.saturating_add(1),
             },
             status: "Ready".into(),
         }
@@ -1595,6 +1809,76 @@ mod tests {
         assert!(controller.freecell.can_redo());
         controller.redo();
         assert_eq!(controller.freecell.state, moved);
+    }
+
+    #[test]
+    fn tripeaks_surface_routes_standard_play_history_and_reopen() {
+        let path = test_save("tripeaks-surface");
+        remove_save(&path);
+        let mut controller = controller(81);
+        controller.select_game("TriPeaks");
+        controller.tripeaks_save_path = Some(path.clone());
+        controller.new_game("Standard");
+        assert!(!controller.tripeaks.state.options.wraparound);
+
+        match controller.tripeaks.hint().unwrap() {
+            tripeaks::Action::Draw => controller.draw_tripeaks_stock(),
+            tripeaks::Action::Remove(index) => controller.activate_tripeaks_card(index.into()),
+        }
+        assert!(controller.tripeaks.can_undo());
+        let moved = controller.tripeaks.state.clone();
+        controller.undo();
+        assert!(controller.tripeaks.can_redo());
+        controller.redo();
+        assert_eq!(controller.tripeaks.state, moved);
+        assert_eq!(load_tripeaks_revisioned(&path).unwrap().0.state, moved);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn tripeaks_save_conflict_preserves_memory_until_reload() {
+        let path = test_save("tripeaks-conflict");
+        remove_save(&path);
+        let mut controller = controller(82);
+        controller.select_game("TriPeaks");
+        controller.tripeaks_save_path = Some(path.clone());
+        assert!(controller.save());
+
+        let disk_game = TriPeaksGame::new(999, tripeaks::Options::default());
+        solitaire::persistence::save_tripeaks(&path, &disk_game).unwrap();
+        controller.draw_tripeaks_stock();
+        assert!(controller.dirty[3]);
+        assert!(controller.status.contains("save changed in another"));
+
+        controller.reload_disk_copy();
+        assert_eq!(controller.tripeaks, disk_game);
+        assert!(!controller.dirty[3]);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn tripeaks_counter_overflow_preserves_current_deal() {
+        let mut controller = controller(83);
+        controller.select_game("TriPeaks");
+        controller.next_seeds.tripeaks = u64::MAX;
+        let current = controller.tripeaks.clone();
+        controller.new_game("Standard");
+        assert_eq!(controller.tripeaks, current);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(controller.status.contains("No further deal number"));
+    }
+
+    #[test]
+    fn tripeaks_layout_positions_all_four_rows_inside_the_surface() {
+        let width = 1084.0;
+        for index in 0..28 {
+            let x = tripeaks_x(index, width);
+            assert!((0.0..=width - 104.0).contains(&x));
+        }
+        assert!(tripeaks_x(0, width) < tripeaks_x(1, width));
+        assert!(tripeaks_x(1, width) < tripeaks_x(2, width));
+        assert!(tripeaks_x(18, width).abs() < f32::EPSILON);
+        assert!((tripeaks_x(27, width) - (width - 104.0)).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1780,13 +2064,13 @@ mod tests {
     #[test]
     fn discard_and_close_explicitly_releases_the_close_guard() {
         let mut controller = controller(404);
-        controller.dirty = [true; 3];
+        controller.dirty = [true; 4];
         controller.new_game("Draw 1");
         assert!(controller.pending_new_deal.is_some());
 
         controller.discard_unsaved_and_close();
 
-        assert_eq!(controller.dirty, [false; 3]);
+        assert_eq!(controller.dirty, [false; 4]);
         assert!(controller.pending_new_deal.is_none());
         assert!(controller.status.contains("closing"));
     }

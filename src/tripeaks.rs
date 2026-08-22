@@ -95,7 +95,11 @@ pub struct Game {
     #[serde(default)]
     undo: Vec<State>,
     #[serde(default)]
+    redo: Vec<State>,
+    #[serde(default)]
     actions: Vec<Action>,
+    #[serde(default)]
+    redo_actions: Vec<Action>,
 }
 
 impl Game {
@@ -104,7 +108,9 @@ impl Game {
         Self {
             state: State::new(seed, options),
             undo: Vec::new(),
+            redo: Vec::new(),
             actions: Vec::new(),
+            redo_actions: Vec::new(),
         }
     }
 
@@ -113,6 +119,9 @@ impl Game {
     /// # Errors
     /// Returns [`MoveError`] for a covered or non-adjacent card, or empty stock.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.actions.len() >= crate::replay::MAX_REPLAY_ACTIONS {
+            return Err(MoveError::ResourceLimit);
+        }
         let before = self.state.clone();
         let result = match action {
             Action::Draw => self.draw(),
@@ -122,8 +131,10 @@ impl Game {
             self.state = before;
             return Err(error);
         }
-        self.undo.push(before);
+        push_bounded_history(&mut self.undo, before);
+        self.redo.clear();
         self.actions.push(action);
+        self.redo_actions.clear();
         Ok(())
     }
 
@@ -131,9 +142,32 @@ impl Game {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        self.state = previous;
-        self.actions.pop();
+        self.redo.push(std::mem::replace(&mut self.state, previous));
+        if let Some(action) = self.actions.pop() {
+            self.redo_actions.push(action);
+        }
         true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        push_bounded_history(&mut self.undo, std::mem::replace(&mut self.state, next));
+        if let Some(action) = self.redo_actions.pop() {
+            self.actions.push(action);
+        }
+        true
+    }
+
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
     }
 
     #[must_use]
@@ -152,14 +186,18 @@ impl Game {
     /// # Errors
     /// Returns an error for a wrong game identifier or illegal action.
     pub fn from_replay(replay: &Replay<Action, Options>) -> Result<Self, MoveError> {
-        replay
-            .validate_version()
+        crate::replay::validate_version(replay.version)
             .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
+        crate::replay::validate_action_count(replay.actions.len())
+            .map_err(|_| MoveError::ResourceLimit)?;
         if replay.game != "tripeaks" {
             return Err(MoveError::WrongGame);
         }
         let mut game = Self::new(replay.seed, replay.setup);
-        for action in &replay.actions {
+        let deadline = Replay::<Action, Options>::reconstruction_deadline();
+        for (step, action) in replay.actions.iter().enumerate() {
+            Replay::<Action, Options>::check_reconstruction(deadline, step + 1)
+                .map_err(|_| MoveError::ResourceLimit)?;
             game.apply(*action)?;
         }
         Ok(game)
@@ -182,10 +220,15 @@ impl Game {
     }
 
     fn draw(&mut self) -> Result<(), MoveError> {
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         let card = self.state.stock.pop().ok_or(MoveError::EmptyStock)?;
         self.state.waste.push(card);
         self.state.streak = 0;
-        self.state.moves += 1;
+        self.state.moves = moves;
         Ok(())
     }
 
@@ -198,13 +241,34 @@ impl Game {
         if !adjacent(waste, card, self.state.options.wraparound) {
             return Err(MoveError::NotAdjacent);
         }
+        let streak = self
+            .state
+            .streak
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
+        let score = streak
+            .checked_mul(100)
+            .and_then(|points| self.state.score.checked_add(points))
+            .ok_or(MoveError::CounterOverflow)?;
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.state.tableau[index] = None;
         self.state.waste.push(card);
-        self.state.streak += 1;
-        self.state.score += self.state.streak * 100;
-        self.state.moves += 1;
+        self.state.streak = streak;
+        self.state.score = score;
+        self.state.moves = moves;
         Ok(())
     }
+}
+
+fn push_bounded_history(history: &mut Vec<State>, state: State) {
+    if history.len() == crate::replay::MAX_HISTORY_ACTIONS {
+        history.remove(0);
+    }
+    history.push(state);
 }
 
 fn adjacent(first: Card, second: Card, wraparound: bool) -> bool {
@@ -221,6 +285,8 @@ pub enum MoveError {
     NotAdjacent,
     WrongGame,
     UnsupportedReplayVersion(u16),
+    ResourceLimit,
+    CounterOverflow,
 }
 impl std::fmt::Display for MoveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -285,7 +351,105 @@ mod tests {
         let replay = game.replay();
         let drawn = game.state.clone();
         assert!(game.undo());
+        assert!(game.can_redo());
+        assert!(game.redo());
+        assert_eq!(game.state, drawn);
         assert_eq!(Game::from_replay(&replay).unwrap().state, drawn);
+    }
+
+    #[test]
+    fn illegal_covered_and_non_adjacent_removals_are_atomic() {
+        let mut game = Game::new(7, Options::default());
+        let before = game.clone();
+        assert_eq!(game.apply(Action::Remove(0)), Err(MoveError::CoveredCard));
+        assert_eq!(game, before);
+
+        let index = (18..28)
+            .find(|&index| {
+                let waste = *game.state.waste.last().unwrap();
+                !adjacent(waste, game.state.tableau[index].unwrap(), false)
+            })
+            .unwrap();
+        let before = game.clone();
+        assert_eq!(
+            game.apply(Action::Remove(to_u8(index))),
+            Err(MoveError::NotAdjacent)
+        );
+        assert_eq!(game, before);
+    }
+
+    #[test]
+    fn fixed_seed_hint_is_legal_and_streak_scoring_accumulates() {
+        let mut game = Game::new(7, Options::default());
+        let hint = game.hint().unwrap();
+        game.apply(hint).unwrap();
+        assert_eq!(game.state.moves, 1);
+
+        game.state.tableau = [None; TABLEAU_SIZE];
+        game.state.tableau[18] = Some(card(Rank::Queen));
+        game.state.tableau[19] = Some(card(Rank::King));
+        game.state.waste = vec![card(Rank::Jack)];
+        game.state.streak = 0;
+        game.state.score = 0;
+        game.apply(Action::Remove(18)).unwrap();
+        game.apply(Action::Remove(19)).unwrap();
+        assert_eq!(game.state.streak, 2);
+        assert_eq!(game.state.score, 300);
+    }
+
+    #[test]
+    fn removing_last_tableau_card_wins() {
+        let mut game = Game::new(2, Options::default());
+        game.state.tableau = [None; TABLEAU_SIZE];
+        game.state.tableau[27] = Some(card(Rank::Queen));
+        game.state.waste = vec![card(Rank::Jack)];
+        game.apply(Action::Remove(27)).unwrap();
+        assert!(game.state.is_won());
+    }
+
+    #[test]
+    fn malformed_and_oversized_replays_are_rejected() {
+        let mut wrong_game = Game::new(1, Options::default()).replay();
+        wrong_game.game = "spider".into();
+        assert_eq!(Game::from_replay(&wrong_game), Err(MoveError::WrongGame));
+
+        let mut oversized = Game::new(1, Options::default()).replay();
+        oversized.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS + 1];
+        assert_eq!(Game::from_replay(&oversized), Err(MoveError::ResourceLimit));
+    }
+
+    #[test]
+    fn replay_limit_rejects_before_mutation_and_history_is_bounded() {
+        let mut game = Game::new(1, Options::default());
+        game.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS];
+        let before = game.state.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::ResourceLimit));
+        assert_eq!(game.state, before);
+
+        game.undo = vec![game.state.clone(); crate::replay::MAX_HISTORY_ACTIONS];
+        push_bounded_history(&mut game.undo, game.state.clone());
+        assert_eq!(game.undo.len(), crate::replay::MAX_HISTORY_ACTIONS);
+    }
+
+    #[test]
+    fn counter_overflow_is_rejected_atomically() {
+        let mut draw = Game::new(1, Options::default());
+        draw.state.moves = u32::MAX;
+        let before = draw.clone();
+        assert_eq!(draw.apply(Action::Draw), Err(MoveError::CounterOverflow));
+        assert_eq!(draw, before);
+
+        let mut remove = Game::new(1, Options::default());
+        remove.state.tableau = [None; TABLEAU_SIZE];
+        remove.state.tableau[18] = Some(card(Rank::Queen));
+        remove.state.waste = vec![card(Rank::Jack)];
+        remove.state.score = u32::MAX;
+        let before = remove.clone();
+        assert_eq!(
+            remove.apply(Action::Remove(18)),
+            Err(MoveError::CounterOverflow)
+        );
+        assert_eq!(remove, before);
     }
 
     #[test]
@@ -296,5 +460,9 @@ mod tests {
             Game::from_replay(&replay),
             Err(MoveError::UnsupportedReplayVersion(3))
         );
+    }
+
+    fn to_u8(value: usize) -> u8 {
+        u8::try_from(value).unwrap()
     }
 }
