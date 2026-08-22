@@ -92,7 +92,11 @@ pub struct Game {
     #[serde(default)]
     undo: Vec<State>,
     #[serde(default)]
+    redo: Vec<State>,
+    #[serde(default)]
     actions: Vec<Action>,
+    #[serde(default)]
+    redo_actions: Vec<Action>,
 }
 
 impl Game {
@@ -101,7 +105,9 @@ impl Game {
         Self {
             state: State::new(seed, options),
             undo: Vec::new(),
+            redo: Vec::new(),
             actions: Vec::new(),
+            redo_actions: Vec::new(),
         }
     }
 
@@ -110,6 +116,12 @@ impl Game {
     /// # Errors
     /// Returns [`MoveError`] when the action is illegal.
     pub fn apply(&mut self, action: Action) -> Result<(), MoveError> {
+        if self.state.is_won() {
+            return Err(MoveError::GameComplete);
+        }
+        if self.actions.len() >= crate::replay::MAX_REPLAY_ACTIONS {
+            return Err(MoveError::ResourceLimit);
+        }
         let before = self.state.clone();
         let result = match action {
             Action::Draw => self.draw(),
@@ -121,8 +133,10 @@ impl Game {
             self.state = before;
             return Err(error);
         }
-        self.undo.push(before);
+        push_bounded_history(&mut self.undo, before);
+        self.redo.clear();
         self.actions.push(action);
+        self.redo_actions.clear();
         Ok(())
     }
 
@@ -130,9 +144,32 @@ impl Game {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        self.state = previous;
-        self.actions.pop();
+        self.redo.push(std::mem::replace(&mut self.state, previous));
+        if let Some(action) = self.actions.pop() {
+            self.redo_actions.push(action);
+        }
         true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        push_bounded_history(&mut self.undo, std::mem::replace(&mut self.state, next));
+        if let Some(action) = self.redo_actions.pop() {
+            self.actions.push(action);
+        }
+        true
+    }
+
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
     }
 
     #[must_use]
@@ -151,23 +188,78 @@ impl Game {
     /// # Errors
     /// Returns an error for a wrong game identifier or illegal action.
     pub fn from_replay(replay: &Replay<Action, Options>) -> Result<Self, MoveError> {
-        replay
-            .validate_version()
+        crate::replay::validate_version(replay.version)
             .map_err(|_| MoveError::UnsupportedReplayVersion(replay.version))?;
+        crate::replay::validate_action_count(replay.actions.len())
+            .map_err(|_| MoveError::ResourceLimit)?;
         if replay.game != "pyramid" {
             return Err(MoveError::WrongGame);
         }
         let mut game = Self::new(replay.seed, replay.setup);
-        for action in &replay.actions {
+        let deadline = Replay::<Action, Options>::reconstruction_deadline();
+        for (step, action) in replay.actions.iter().enumerate() {
+            Replay::<Action, Options>::check_reconstruction(deadline, step + 1)
+                .map_err(|_| MoveError::ResourceLimit)?;
             game.apply(*action)?;
         }
         Ok(game)
     }
 
+    #[must_use]
+    pub fn hint(&self) -> Option<Action> {
+        if self.state.is_won() {
+            return None;
+        }
+        let sources = self.available_sources();
+        if let Some(source) = sources
+            .iter()
+            .copied()
+            .find(|&source| self.card(source).is_ok_and(|card| card.rank == Rank::King))
+        {
+            return Some(Action::RemoveKing(source));
+        }
+        for (index, first) in sources.iter().copied().enumerate() {
+            for second in sources.iter().copied().skip(index + 1) {
+                if self.card(first).is_ok_and(|first_card| {
+                    self.card(second).is_ok_and(|second_card| {
+                        first_card.rank.value() + second_card.rank.value() == 13
+                    })
+                }) {
+                    return Some(Action::RemovePair(first, second));
+                }
+            }
+        }
+        if !self.state.stock.is_empty() {
+            Some(Action::Draw)
+        } else if !self.state.waste.is_empty()
+            && self.state.redeals < self.state.options.max_redeals
+        {
+            Some(Action::Recycle)
+        } else {
+            None
+        }
+    }
+
+    fn available_sources(&self) -> Vec<Source> {
+        let mut sources = (0..PYRAMID_SIZE)
+            .filter(|&index| self.state.is_exposed(index))
+            .map(|index| Source::Pyramid(u8::try_from(index).unwrap_or_default()))
+            .collect::<Vec<_>>();
+        if !self.state.waste.is_empty() {
+            sources.push(Source::Waste);
+        }
+        sources
+    }
+
     fn draw(&mut self) -> Result<(), MoveError> {
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         let card = self.state.stock.pop().ok_or(MoveError::EmptyStock)?;
         self.state.waste.push(card);
-        self.state.moves += 1;
+        self.state.moves = moves;
         Ok(())
     }
 
@@ -178,9 +270,19 @@ impl Game {
         if self.state.redeals >= self.state.options.max_redeals {
             return Err(MoveError::RedealLimit);
         }
+        let redeals = self
+            .state
+            .redeals
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.state.stock.extend(self.state.waste.drain(..).rev());
-        self.state.redeals += 1;
-        self.state.moves += 1;
+        self.state.redeals = redeals;
+        self.state.moves = moves;
         Ok(())
     }
 
@@ -188,9 +290,19 @@ impl Game {
         if self.card(source)?.rank != Rank::King {
             return Err(MoveError::NotKing);
         }
+        let score = self
+            .state
+            .score
+            .checked_add(10)
+            .ok_or(MoveError::CounterOverflow)?;
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.remove(source);
-        self.state.score += 10;
-        self.state.moves += 1;
+        self.state.score = score;
+        self.state.moves = moves;
         Ok(())
     }
 
@@ -201,10 +313,20 @@ impl Game {
         if self.card(first)?.rank.value() + self.card(second)?.rank.value() != 13 {
             return Err(MoveError::NotThirteen);
         }
+        let score = self
+            .state
+            .score
+            .checked_add(20)
+            .ok_or(MoveError::CounterOverflow)?;
+        let moves = self
+            .state
+            .moves
+            .checked_add(1)
+            .ok_or(MoveError::CounterOverflow)?;
         self.remove(first);
         self.remove(second);
-        self.state.score += 20;
-        self.state.moves += 1;
+        self.state.score = score;
+        self.state.moves = moves;
         Ok(())
     }
 
@@ -236,6 +358,13 @@ impl Game {
     }
 }
 
+fn push_bounded_history(history: &mut Vec<State>, state: State) {
+    if history.len() == crate::replay::MAX_HISTORY_ACTIONS {
+        history.remove(0);
+    }
+    history.push(state);
+}
+
 fn position(index: usize) -> (usize, usize) {
     let mut row = 0;
     while (row + 1) * (row + 2) / 2 <= index {
@@ -256,6 +385,9 @@ pub enum MoveError {
     NotThirteen,
     WrongGame,
     UnsupportedReplayVersion(u16),
+    ResourceLimit,
+    CounterOverflow,
+    GameComplete,
 }
 
 impl std::fmt::Display for MoveError {
@@ -276,6 +408,7 @@ mod tests {
     #[test]
     fn deal_and_exposure_are_correct() {
         let state = State::new(12, Options::default());
+        assert_eq!(state, State::new(12, Options::default()));
         assert_eq!(state.card_count(), 52);
         assert_eq!(state.stock.len(), 24);
         assert!((0..21).all(|index| !state.is_exposed(index)));
@@ -288,7 +421,12 @@ mod tests {
         game.state.pyramid = [None; 28];
         game.state.pyramid[21] = Some(card(Rank::Five));
         game.state.pyramid[22] = Some(card(Rank::Eight));
+        game.state.pyramid[23] = Some(card(Rank::Ace));
+        game.state.pyramid[24] = Some(card(Rank::Two));
         game.apply(Action::RemovePair(Source::Pyramid(21), Source::Pyramid(22)))
+            .unwrap();
+        game.state.waste.push(card(Rank::Queen));
+        game.apply(Action::RemovePair(Source::Waste, Source::Pyramid(23)))
             .unwrap();
         game.state.waste.push(card(Rank::Queen));
         let before = game.state.clone();
@@ -299,6 +437,14 @@ mod tests {
         assert_eq!(game.state, before);
         game.state.waste.push(card(Rank::King));
         game.apply(Action::RemoveKing(Source::Waste)).unwrap();
+        assert_eq!(game.state.score, 50);
+
+        let before = game.clone();
+        assert_eq!(
+            game.apply(Action::RemoveKing(Source::Pyramid(u8::MAX))),
+            Err(MoveError::CoveredCard)
+        );
+        assert_eq!(game, before);
     }
 
     #[test]
@@ -318,16 +464,118 @@ mod tests {
         let replay = game.replay();
         let drawn = game.state.clone();
         assert!(game.undo());
+        assert!(game.can_redo());
+        assert!(game.redo());
+        assert_eq!(game.state, drawn);
+        assert!(game.undo());
         assert_eq!(Game::from_replay(&replay).unwrap().state, drawn);
         assert_eq!(Game::from_replay(&replay).unwrap().state.options, options);
         while !game.state.stock.is_empty() {
             game.apply(Action::Draw).unwrap();
         }
+        game.state.pyramid = [None; PYRAMID_SIZE];
+        game.state.pyramid[27] = Some(card(Rank::Five));
+        game.state.waste = vec![card(Rank::Five)];
+        assert_eq!(game.hint(), Some(Action::Recycle));
         game.apply(Action::Recycle).unwrap();
         while !game.state.stock.is_empty() {
             game.apply(Action::Draw).unwrap();
         }
         assert_eq!(game.apply(Action::Recycle), Err(MoveError::RedealLimit));
+    }
+
+    #[test]
+    fn fixed_seed_hint_is_legal_and_prefers_removals() {
+        let mut game = Game::new(12, Options::default());
+        let hint = game.hint().unwrap();
+        game.apply(hint).unwrap();
+
+        game.state.pyramid = [None; PYRAMID_SIZE];
+        game.state.pyramid[21] = Some(card(Rank::King));
+        game.state.pyramid[22] = Some(card(Rank::Five));
+        game.state.pyramid[23] = Some(card(Rank::Eight));
+        game.state.stock = vec![card(Rank::Ace)];
+        game.state.score = 0;
+        assert_eq!(game.hint(), Some(Action::RemoveKing(Source::Pyramid(21))));
+        game.apply(game.hint().unwrap()).unwrap();
+        let pair = game.hint().unwrap();
+        assert!(matches!(pair, Action::RemovePair(_, _)));
+        game.apply(pair).unwrap();
+        assert_eq!(game.state.score, 30);
+    }
+
+    #[test]
+    fn removing_last_pyramid_card_wins_and_blocks_new_actions() {
+        let mut game = Game::new(2, Options::default());
+        game.state.pyramid = [None; PYRAMID_SIZE];
+        game.state.pyramid[27] = Some(card(Rank::King));
+        game.apply(Action::RemoveKing(Source::Pyramid(27))).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.hint(), None);
+
+        let complete = game.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::GameComplete));
+        assert_eq!(
+            game.apply(Action::RemoveKing(Source::Pyramid(27))),
+            Err(MoveError::GameComplete)
+        );
+        assert_eq!(game, complete);
+        assert!(game.undo());
+        assert!(!game.state.is_won());
+        assert!(game.redo());
+        assert!(game.state.is_won());
+    }
+
+    #[test]
+    fn malformed_and_oversized_replays_are_rejected() {
+        let mut wrong_game = Game::new(1, Options::default()).replay();
+        wrong_game.game = "freecell".into();
+        assert_eq!(Game::from_replay(&wrong_game), Err(MoveError::WrongGame));
+
+        let mut oversized = Game::new(1, Options::default()).replay();
+        oversized.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS + 1];
+        assert_eq!(Game::from_replay(&oversized), Err(MoveError::ResourceLimit));
+    }
+
+    #[test]
+    fn legal_play_exceeds_undo_window_and_replay_stays_bounded() {
+        let mut game = Game::new(55, Options { max_redeals: 255 });
+        for _ in 0..600 {
+            let action = if game.state.stock.is_empty() {
+                Action::Recycle
+            } else {
+                Action::Draw
+            };
+            game.apply(action).unwrap();
+        }
+        assert_eq!(game.undo.len(), crate::replay::MAX_HISTORY_ACTIONS);
+        assert_eq!(game.replay().actions.len(), 600);
+        assert_eq!(Game::from_replay(&game.replay()).unwrap().state, game.state);
+
+        game.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS];
+        let before = game.state.clone();
+        assert_eq!(game.apply(Action::Draw), Err(MoveError::ResourceLimit));
+        assert_eq!(game.state, before);
+    }
+
+    #[test]
+    fn counter_overflow_is_rejected_atomically() {
+        let mut draw = Game::new(1, Options::default());
+        draw.state.moves = u32::MAX;
+        let before = draw.clone();
+        assert_eq!(draw.apply(Action::Draw), Err(MoveError::CounterOverflow));
+        assert_eq!(draw, before);
+
+        let mut king = Game::new(1, Options::default());
+        king.state.pyramid = [None; PYRAMID_SIZE];
+        king.state.pyramid[27] = Some(card(Rank::King));
+        king.state.score = u32::MAX;
+        let before = king.clone();
+        assert_eq!(
+            king.apply(Action::RemoveKing(Source::Pyramid(27))),
+            Err(MoveError::CounterOverflow)
+        );
+        assert_eq!(king, before);
     }
 
     #[test]

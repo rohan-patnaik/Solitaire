@@ -15,6 +15,11 @@ export struct UiTriPeaksCard {
     present: bool,
 }
 
+export struct UiPyramidCard {
+    card: UiCard,
+    present: bool,
+}
+
 component CardFace inherits Rectangle {
     in property <UiCard> card;
     callback activated;
@@ -121,6 +126,7 @@ export component AppWindow inherits Window {
     in property <[UiCard]> free-cells;
     in property <[bool]> free-cell-occupied;
     in property <[UiTriPeaksCard]> tripeaks-cards;
+    in property <[UiPyramidCard]> pyramid-cards;
     in property <UiCard> waste-card;
     in property <bool> has-waste;
     in property <int> stock-count;
@@ -130,6 +136,8 @@ export component AppWindow inherits Window {
     in property <int> longest-column;
     in property <int> deal-id;
     in property <string> deal-number;
+    in property <int> redeals;
+    in property <int> redeals-remaining;
     in property <string> status-text: "Ready";
     in property <bool> can-undo;
     in property <bool> can-redo;
@@ -151,6 +159,9 @@ export component AppWindow inherits Window {
     callback freecell-foundation-activated(int);
     callback tripeaks-draw-stock;
     callback tripeaks-tableau-activated(int);
+    callback pyramid-draw-stock;
+    callback pyramid-waste-activated;
+    callback pyramid-tableau-activated(int);
     callback undo-requested;
     callback redo-requested;
     callback hint-requested;
@@ -163,6 +174,8 @@ export component AppWindow inherits Window {
     callback reload-disk-requested;
     pure callback fan-spacing(int, float) -> float;
     pure callback tripeaks-x(int, float) -> float;
+    pure callback pyramid-x(int, float) -> float;
+    pure callback pyramid-y(int) -> float;
 
     VerticalBox {
         padding: 22px;
@@ -178,7 +191,7 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
             }
             game-picker := ComboBox {
-                model: ["Klondike", "Spider", "FreeCell", "TriPeaks"];
+                model: ["Klondike", "Spider", "FreeCell", "Pyramid", "TriPeaks"];
                 current-value: root.game-kind;
                 accessible-label: "Game picker";
             }
@@ -203,7 +216,9 @@ export component AppWindow inherits Window {
                         ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-id
                         : (root.game-kind == "TriPeaks"
                             ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number
-                            : "Score  " + root.score + "     Moves  " + root.moves));
+                            : (root.game-kind == "Pyramid"
+                                ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number + "     Redeals  " + root.redeals
+                                : "Score  " + root.score + "     Moves  " + root.moves)));
                 color: #dce9e3;
                 font-size: 17px;
                 vertical-alignment: center;
@@ -242,6 +257,11 @@ export component AppWindow inherits Window {
             if root.game-kind == "TriPeaks": Button {
                 text: "New deal";
                 accessible-label: "Start the next standard TriPeaks deal";
+                clicked => { root.new-game("Standard"); }
+            }
+            if root.game-kind == "Pyramid": Button {
+                text: "New deal";
+                accessible-label: "Start the next standard Pyramid deal";
                 clicked => { root.new-game("Standard"); }
             }
         }
@@ -474,6 +494,56 @@ export component AppWindow inherits Window {
             }
         }
 
+        if root.game-kind == "Pyramid": Rectangle {
+            background: #0d332e;
+            border-radius: 18px;
+            vertical-stretch: 1;
+
+            Rectangle {
+                x: 24px;
+                y: 18px;
+                width: parent.width - 48px;
+                height: 382px;
+                for item[index] in root.pyramid-cards: CardFace {
+                    x: root.pyramid-x(index, parent.width / 1px) * 1px;
+                    y: root.pyramid-y(index) * 1px;
+                    visible: item.present;
+                    card: item.card;
+                    activated => { root.pyramid-tableau-activated(index); }
+                }
+            }
+
+            EmptySlot {
+                x: 24px;
+                y: 420px;
+                label: root.stock-count > 0
+                    ? root.stock-count + " cards\nDraw"
+                    : (root.redeals-remaining > 0 ? "Recycle waste" : "Stock empty");
+                activated => { root.pyramid-draw-stock(); }
+            }
+            if root.has-waste: CardFace {
+                x: 150px;
+                y: 420px;
+                card: root.waste-card;
+                activated => { root.pyramid-waste-activated(); }
+            }
+            if !root.has-waste: EmptySlot {
+                x: 150px;
+                y: 420px;
+                label: "Pyramid waste empty";
+                activated => { root.pyramid-waste-activated(); }
+            }
+            Text {
+                x: 280px;
+                y: 444px;
+                width: parent.width - 304px;
+                text: "Remove exposed pairs totaling 13; remove kings by themselves. Redeals remaining: " + root.redeals-remaining;
+                color: #dce9e3;
+                font-size: 18px;
+                wrap: word-wrap;
+            }
+        }
+
         Text {
             text: root.game-kind == "Spider"
                 ? "Move descending same-suit runs. Build by rank; complete King-to-Ace suited runs."
@@ -481,7 +551,9 @@ export component AppWindow inherits Window {
                     ? "Use four free cells to build alternating cascades and ascending suit foundations."
                     : (root.game-kind == "TriPeaks"
                         ? "Standard TriPeaks uses no rank wraparound. All play stays on this device."
-                        : "Choose a face-up card or run, then choose its destination. All play stays on this device."));
+                        : (root.game-kind == "Pyramid"
+                            ? "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device."
+                            : "Choose a face-up card or run, then choose its destination. All play stays on this device.")));
             color: #aac5bd;
             font-size: 14px;
             horizontal-alignment: center;

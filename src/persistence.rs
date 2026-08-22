@@ -1,5 +1,6 @@
 use crate::freecell;
 use crate::klondike::{Game, ValidationError};
+use crate::pyramid;
 use crate::replay::Replay;
 use crate::spider;
 use crate::tripeaks;
@@ -46,6 +47,11 @@ pub fn default_tripeaks_save_path() -> Option<PathBuf> {
 }
 
 #[must_use]
+pub fn default_pyramid_save_path() -> Option<PathBuf> {
+    default_named_save_path("pyramid-save.json")
+}
+
+#[must_use]
 pub fn default_deal_counters_path() -> Option<PathBuf> {
     default_named_save_path("deal-counters.json")
 }
@@ -57,6 +63,8 @@ pub struct DealCounters {
     pub freecell: u64,
     #[serde(default)]
     pub tripeaks: u64,
+    #[serde(default)]
+    pub pyramid: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +73,7 @@ pub enum DealKind {
     Spider,
     FreeCell,
     TriPeaks,
+    Pyramid,
 }
 
 /// Persists independent per-game next-deal counters.
@@ -130,11 +139,13 @@ pub fn reserve_deal(
     counters.spider = counters.spider.max(minimum.spider);
     counters.freecell = counters.freecell.max(minimum.freecell);
     counters.tripeaks = counters.tripeaks.max(minimum.tripeaks);
+    counters.pyramid = counters.pyramid.max(minimum.pyramid);
     let seed = match kind {
         DealKind::Klondike => counters.klondike,
         DealKind::Spider => counters.spider,
         DealKind::FreeCell => counters.freecell,
         DealKind::TriPeaks => counters.tripeaks,
+        DealKind::Pyramid => counters.pyramid,
     };
     let next = seed.checked_add(1).ok_or(SaveError::CounterOverflow)?;
     match kind {
@@ -142,6 +153,7 @@ pub fn reserve_deal(
         DealKind::Spider => counters.spider = next,
         DealKind::FreeCell => counters.freecell = next,
         DealKind::TriPeaks => counters.tripeaks = next,
+        DealKind::Pyramid => counters.pyramid = next,
     }
     let envelope = SaveEnvelope {
         version: CURRENT_SAVE_VERSION,
@@ -406,6 +418,48 @@ pub fn load_tripeaks_revisioned(path: &Path) -> Result<(tripeaks::Game, SaveRevi
     load_with_revision(path, parse_tripeaks)
 }
 
+/// Saves a standard Pyramid game as a versioned deterministic replay.
+///
+/// # Errors
+/// Returns an I/O or serialization error if the atomic save fails.
+pub fn save_pyramid(path: &Path, game: &pyramid::Game) -> Result<(), SaveError> {
+    save_replay(path, "pyramid", &game.replay())
+}
+
+/// Saves Pyramid only if the on-disk revision still matches `expected`.
+///
+/// # Errors
+/// Returns a typed error for stale ownership, bounded I/O, or serialization.
+pub fn save_pyramid_checked(
+    path: &Path,
+    game: &pyramid::Game,
+    expected: &mut Option<SaveRevision>,
+) -> Result<(), SaveError> {
+    save_replay_checked(path, "pyramid", &game.replay(), expected)
+}
+
+/// Loads and legally reconstructs a Pyramid game from its saved replay.
+///
+/// # Errors
+/// Returns a typed error for malformed, unsupported, mismatched, or illegal data.
+pub fn load_pyramid(path: &Path) -> Result<pyramid::Game, SaveError> {
+    let bytes = read_bounded(path)?;
+    parse_pyramid(&bytes)
+}
+
+fn parse_pyramid(bytes: &[u8]) -> Result<pyramid::Game, SaveError> {
+    let replay = parse_replay::<Replay<pyramid::Action, pyramid::Options>>(bytes, "pyramid")?;
+    pyramid::Game::from_replay(&replay).map_err(|error| SaveError::InvalidReplay(error.to_string()))
+}
+
+/// Loads Pyramid and its compare-and-replace revision under one bounded lock.
+///
+/// # Errors
+/// Returns a typed load or bounded-lock error.
+pub fn load_pyramid_revisioned(path: &Path) -> Result<(pyramid::Game, SaveRevision), SaveError> {
+    load_with_revision(path, parse_pyramid)
+}
+
 fn load_with_revision<T>(
     path: &Path,
     parse: impl FnOnce(&[u8]) -> Result<T, SaveError>,
@@ -466,6 +520,14 @@ pub fn recover_tripeaks_revisioned(
     path: &Path,
 ) -> Result<RecoveredSave<tripeaks::Game>, SaveError> {
     recover_with_revision(path, parse_tripeaks, || {}, sync_directory)
+}
+
+/// Loads or atomically quarantines a malformed Pyramid save under one bounded lock.
+///
+/// # Errors
+/// Returns without moving the source if bounded reading, identity checking, or quarantine fails.
+pub fn recover_pyramid_revisioned(path: &Path) -> Result<RecoveredSave<pyramid::Game>, SaveError> {
+    recover_with_revision(path, parse_pyramid, || {}, sync_directory)
 }
 
 fn recover_with_revision<T>(
@@ -990,6 +1052,7 @@ mod tests {
             spider: 900,
             freecell: 5,
             tripeaks: 77,
+            pyramid: 303,
         };
         save_deal_counters(&path, counters).unwrap();
         let restored = load_deal_counters(&path).unwrap();
@@ -998,8 +1061,31 @@ mod tests {
         assert_eq!(restored.spider.checked_add(1), Some(901));
         assert_eq!(restored.freecell.checked_add(1), Some(6));
         assert_eq!(restored.tripeaks.checked_add(1), Some(78));
+        assert_eq!(restored.pyramid.checked_add(1), Some(304));
         fs::remove_file(&path).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn older_deal_counters_default_pyramid_without_changing_other_games() {
+        let path = test_path("deal-counters-before-pyramid.json");
+        fs::write(
+            &path,
+            br#"{"version":1,"game":"deal-counters","payload":{"klondike":41,"spider":900,"freecell":5,"tripeaks":77}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            load_deal_counters(&path).unwrap(),
+            DealCounters {
+                klondike: 41,
+                spider: 900,
+                freecell: 5,
+                tripeaks: 77,
+                pyramid: 0,
+            }
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -1012,6 +1098,7 @@ mod tests {
             spider: 900,
             freecell: 5,
             tripeaks: 77,
+            pyramid: 303,
         };
         for attempt in 1..=16 {
             match reserve_deal(Path::new(&path), minimum, DealKind::Klondike) {
@@ -1117,6 +1204,7 @@ mod tests {
             spider: 1,
             freecell: 1,
             tripeaks: u64::MAX,
+            pyramid: 1,
         };
         save_deal_counters(&path, minimum).unwrap();
         let before = fs::read(&path).unwrap();
@@ -1148,6 +1236,84 @@ mod tests {
         assert_eq!(fs::read(&quarantined).unwrap(), corrupt);
         fs::remove_file(quarantined).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn pyramid_replay_save_reopens_equivalent_state_and_history() {
+        let path = test_path("pyramid.json");
+        let mut game = pyramid::Game::new(43, pyramid::Options::default());
+        game.apply(pyramid::Action::Draw).unwrap();
+        let expected = game.state.clone();
+        save_pyramid(&path, &game).unwrap();
+
+        let mut reopened = load_pyramid(&path).unwrap();
+        assert_eq!(reopened.state, expected);
+        assert!(reopened.can_undo());
+        assert!(reopened.undo());
+        assert!(reopened.can_redo());
+        assert!(reopened.redo());
+        assert_eq!(reopened.state, expected);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pyramid_counter_overflow_preserves_counter_file() {
+        let path = test_path("pyramid-counter-overflow.json");
+        let minimum = DealCounters {
+            klondike: 1,
+            spider: 1,
+            freecell: 1,
+            tripeaks: 1,
+            pyramid: u64::MAX,
+        };
+        save_deal_counters(&path, minimum).unwrap();
+        let before = fs::read(&path).unwrap();
+        assert!(matches!(
+            reserve_deal(&path, minimum, DealKind::Pyramid),
+            Err(SaveError::CounterOverflow)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn corrupt_pyramid_save_is_quarantined_without_losing_source_bytes() {
+        let path = test_path("pyramid-corrupt.json");
+        let corrupt = br#"{"version":1,"game":"pyramid","payload":{"version":2}}"#;
+        atomic_write(&path, corrupt).unwrap();
+
+        let RecoveredSave::Quarantined {
+            path: quarantined,
+            reason,
+            ..
+        } = recover_pyramid_revisioned(&path).unwrap()
+        else {
+            panic!("corrupt Pyramid save should be quarantined");
+        };
+        assert!(!reason.is_empty());
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined).unwrap(), corrupt);
+        fs::remove_file(quarantined).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn illegal_pyramid_saved_replay_is_rejected() {
+        let path = test_path("pyramid-illegal.json");
+        let replay = Replay {
+            version: crate::replay::CURRENT_REPLAY_VERSION,
+            game: "pyramid".into(),
+            seed: 1,
+            setup: pyramid::Options::default(),
+            actions: vec![pyramid::Action::RemoveKing(pyramid::Source::Pyramid(0))],
+        };
+        save_replay(&path, "pyramid", &replay).unwrap();
+        assert!(matches!(
+            load_pyramid(&path),
+            Err(SaveError::InvalidReplay(_))
+        ));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

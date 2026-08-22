@@ -4,13 +4,15 @@ use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
 use solitaire::persistence::{
     DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
-    default_deal_counters_path, default_freecell_save_path, default_save_path,
-    default_spider_save_path, default_tripeaks_save_path, load_deal_counters,
-    load_freecell_revisioned, load_klondike_revisioned, load_spider_revisioned,
-    load_tripeaks_revisioned, recover_freecell_revisioned, recover_klondike_revisioned,
-    recover_spider_revisioned, recover_tripeaks_revisioned, reserve_deal, save_freecell_checked,
-    save_klondike_checked, save_spider_checked, save_tripeaks_checked,
+    default_deal_counters_path, default_freecell_save_path, default_pyramid_save_path,
+    default_save_path, default_spider_save_path, default_tripeaks_save_path, load_deal_counters,
+    load_freecell_revisioned, load_klondike_revisioned, load_pyramid_revisioned,
+    load_spider_revisioned, load_tripeaks_revisioned, recover_freecell_revisioned,
+    recover_klondike_revisioned, recover_pyramid_revisioned, recover_spider_revisioned,
+    recover_tripeaks_revisioned, reserve_deal, save_freecell_checked, save_klondike_checked,
+    save_pyramid_checked, save_spider_checked, save_tripeaks_checked,
 };
+use solitaire::pyramid::{self, Game as PyramidGame};
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use solitaire::tripeaks::{self, Game as TriPeaksGame};
 use std::cell::RefCell;
@@ -33,6 +35,7 @@ enum GameKind {
     Spider,
     FreeCell,
     TriPeaks,
+    Pyramid,
 }
 
 struct PendingNewDeal {
@@ -45,6 +48,7 @@ enum ProspectiveGame {
     Spider(SpiderGame),
     FreeCell(FreeCellGame),
     TriPeaks(TriPeaksGame),
+    Pyramid(PyramidGame),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -89,8 +93,11 @@ struct Controller {
     freecell_save_path: Option<PathBuf>,
     tripeaks: TriPeaksGame,
     tripeaks_save_path: Option<PathBuf>,
-    save_revisions: [Option<SaveRevision>; 4],
-    dirty: [bool; 4],
+    pyramid: PyramidGame,
+    pyramid_selection: Option<pyramid::Source>,
+    pyramid_save_path: Option<PathBuf>,
+    save_revisions: [Option<SaveRevision>; 5],
+    dirty: [bool; 5],
     pending_new_deal: Option<PendingNewDeal>,
     pending_new_deal_conflict: bool,
     deal_counters_path: Option<PathBuf>,
@@ -142,6 +149,8 @@ impl Controller {
             },
             |(game, revision)| (game, Some(revision)),
         );
+        let (pyramid, pyramid_save_path, pyramid_revision) =
+            load_initial_pyramid(seed, &mut status);
         let deal_counters_path = default_deal_counters_path();
         let defaults = DealCounters {
             klondike: saved
@@ -151,6 +160,7 @@ impl Controller {
             spider: spider.state.seed.saturating_add(1),
             freecell: freecell.state.deal_number.saturating_add(1),
             tripeaks: tripeaks.state.seed.saturating_add(1),
+            pyramid: pyramid.state.seed.saturating_add(1),
         };
         let mut next_seeds = deal_counters_path
             .as_deref()
@@ -165,15 +175,13 @@ impl Controller {
                 }
             })
             .unwrap_or(defaults);
-        next_seeds.klondike = next_seeds.klondike.max(defaults.klondike);
-        next_seeds.spider = next_seeds.spider.max(defaults.spider);
-        next_seeds.freecell = next_seeds.freecell.max(defaults.freecell);
-        next_seeds.tripeaks = next_seeds.tripeaks.max(defaults.tripeaks);
+        raise_deal_counters(&mut next_seeds, defaults);
         let save_revisions = [
             klondike_revision,
             spider_revision,
             freecell_revision,
             tripeaks_revision,
+            pyramid_revision,
         ];
         Self {
             active: GameKind::Klondike,
@@ -188,8 +196,11 @@ impl Controller {
             freecell_save_path,
             tripeaks,
             tripeaks_save_path,
+            pyramid,
+            pyramid_selection: None,
+            pyramid_save_path,
             save_revisions,
-            dirty: [false; 4],
+            dirty: [false; 5],
             pending_new_deal: None,
             pending_new_deal_conflict: false,
             deal_counters_path,
@@ -305,11 +316,13 @@ impl Controller {
             "Spider" => GameKind::Spider,
             "FreeCell" => GameKind::FreeCell,
             "TriPeaks" => GameKind::TriPeaks,
+            "Pyramid" => GameKind::Pyramid,
             _ => GameKind::Klondike,
         };
         self.selection = None;
         self.spider_selection = None;
         self.freecell_selection = None;
+        self.pyramid_selection = None;
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
         self.status = format!("{} ready", self.game_name());
@@ -372,6 +385,9 @@ impl Controller {
             GameKind::TriPeaks => {
                 ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options::default()))
             }
+            GameKind::Pyramid => {
+                ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options::default()))
+            }
         };
         let index = self.active_index();
         let saved = match &candidate {
@@ -391,6 +407,10 @@ impl Controller {
                 .tripeaks_save_path
                 .as_deref()
                 .map(|path| save_tripeaks_checked(path, game, &mut self.save_revisions[index])),
+            ProspectiveGame::Pyramid(game) => self
+                .pyramid_save_path
+                .as_deref()
+                .map(|path| save_pyramid_checked(path, game, &mut self.save_revisions[index])),
         };
         match saved {
             Some(Ok(())) => {
@@ -430,6 +450,7 @@ impl Controller {
             ProspectiveGame::Spider(game) => self.spider = game,
             ProspectiveGame::FreeCell(game) => self.freecell = game,
             ProspectiveGame::TriPeaks(game) => self.tripeaks = game,
+            ProspectiveGame::Pyramid(game) => self.pyramid = game,
         }
     }
 
@@ -439,6 +460,7 @@ impl Controller {
             GameKind::Spider => DealKind::Spider,
             GameKind::FreeCell => DealKind::FreeCell,
             GameKind::TriPeaks => DealKind::TriPeaks,
+            GameKind::Pyramid => DealKind::Pyramid,
         };
         if let Some(path) = self.deal_counters_path.as_deref() {
             match reserve_deal(path, self.next_seeds, kind) {
@@ -457,6 +479,7 @@ impl Controller {
             GameKind::Spider => self.next_seeds.spider,
             GameKind::FreeCell => self.next_seeds.freecell,
             GameKind::TriPeaks => self.next_seeds.tripeaks,
+            GameKind::Pyramid => self.next_seeds.pyramid,
         };
         let next = seed.checked_add(1)?;
         match game {
@@ -464,6 +487,7 @@ impl Controller {
             GameKind::Spider => self.next_seeds.spider = next,
             GameKind::FreeCell => self.next_seeds.freecell = next,
             GameKind::TriPeaks => self.next_seeds.tripeaks = next,
+            GameKind::Pyramid => self.next_seeds.pyramid = next,
         }
         Some(seed)
     }
@@ -482,6 +506,9 @@ impl Controller {
             }),
             GameKind::TriPeaks => self.tripeaks_save_path.as_deref().map(|path| {
                 save_tripeaks_checked(path, &self.tripeaks, &mut self.save_revisions[index])
+            }),
+            GameKind::Pyramid => self.pyramid_save_path.as_deref().map(|path| {
+                save_pyramid_checked(path, &self.pyramid, &mut self.save_revisions[index])
             }),
         };
         match result {
@@ -523,6 +550,7 @@ impl Controller {
             GameKind::Spider => 1,
             GameKind::FreeCell => 2,
             GameKind::TriPeaks => 3,
+            GameKind::Pyramid => 4,
         }
     }
 
@@ -532,6 +560,7 @@ impl Controller {
             GameKind::Spider => "Spider",
             GameKind::FreeCell => "FreeCell",
             GameKind::TriPeaks => "TriPeaks",
+            GameKind::Pyramid => "Pyramid",
         }
     }
 
@@ -700,6 +729,62 @@ impl Controller {
         self.apply_tripeaks(tripeaks::Action::Draw);
     }
 
+    fn apply_pyramid(&mut self, action: pyramid::Action) {
+        match self.pyramid.apply(action) {
+            Ok(()) => {
+                self.pyramid_selection = None;
+                self.status = if self.pyramid.state.is_won() {
+                    "Pyramid complete — every tableau card is clear".into()
+                } else {
+                    "Move accepted".into()
+                };
+                self.persist_mutation();
+            }
+            Err(error) => self.status = friendly_pyramid_error(error),
+        }
+    }
+
+    fn activate_pyramid_card(&mut self, index: i32) {
+        let Ok(index) = u8::try_from(index) else {
+            return;
+        };
+        self.activate_pyramid_source(pyramid::Source::Pyramid(index));
+    }
+
+    fn activate_pyramid_waste(&mut self) {
+        self.activate_pyramid_source(pyramid::Source::Waste);
+    }
+
+    fn activate_pyramid_source(&mut self, source: pyramid::Source) {
+        let Some(card) = pyramid_source_card(&self.pyramid.state, source) else {
+            self.status = match source {
+                pyramid::Source::Pyramid(_) => "That Pyramid card is covered or empty".into(),
+                pyramid::Source::Waste => "The Pyramid waste is empty".into(),
+            };
+            return;
+        };
+        if self.pyramid_selection == Some(source) {
+            self.pyramid_selection = None;
+            self.status = "Pyramid selection cleared".into();
+        } else if let Some(first) = self.pyramid_selection {
+            self.apply_pyramid(pyramid::Action::RemovePair(first, source));
+        } else if card.rank == Rank::King {
+            self.apply_pyramid(pyramid::Action::RemoveKing(source));
+        } else {
+            self.pyramid_selection = Some(source);
+            self.status = format!("Selected {}; choose a card that makes 13", card_name(card));
+        }
+    }
+
+    fn draw_pyramid_stock(&mut self) {
+        let action = if self.pyramid.state.stock.is_empty() {
+            pyramid::Action::Recycle
+        } else {
+            pyramid::Action::Draw
+        };
+        self.apply_pyramid(action);
+    }
+
     fn undo(&mut self) {
         self.clear_selections();
         let changed = match self.active {
@@ -707,6 +792,7 @@ impl Controller {
             GameKind::Spider => self.spider.undo(),
             GameKind::FreeCell => self.freecell.undo(),
             GameKind::TriPeaks => self.tripeaks.undo(),
+            GameKind::Pyramid => self.pyramid.undo(),
         };
         self.status = if changed {
             self.status = "Move undone".into();
@@ -724,6 +810,7 @@ impl Controller {
             GameKind::Spider => self.spider.redo(),
             GameKind::FreeCell => self.freecell.redo(),
             GameKind::TriPeaks => self.tripeaks.redo(),
+            GameKind::Pyramid => self.pyramid.redo(),
         };
         self.status = if changed {
             self.status = "Move restored".into();
@@ -752,6 +839,10 @@ impl Controller {
                 || "No move remains; undo or start a new deal".into(),
                 |action| format!("Try {}", describe_tripeaks_action(action)),
             ),
+            GameKind::Pyramid => self.pyramid.hint().map_or_else(
+                || "No move remains; undo or start a new deal".into(),
+                |action| format!("Try {}", describe_pyramid_action(action)),
+            ),
         };
     }
 
@@ -769,6 +860,7 @@ impl Controller {
         self.selection = None;
         self.spider_selection = None;
         self.freecell_selection = None;
+        self.pyramid_selection = None;
     }
 
     fn can_undo(&self) -> bool {
@@ -777,6 +869,7 @@ impl Controller {
             GameKind::Spider => self.spider.can_undo(),
             GameKind::FreeCell => self.freecell.can_undo(),
             GameKind::TriPeaks => self.tripeaks.can_undo(),
+            GameKind::Pyramid => self.pyramid.can_undo(),
         }
     }
 
@@ -786,6 +879,7 @@ impl Controller {
             GameKind::Spider => self.spider.can_redo(),
             GameKind::FreeCell => self.freecell.can_redo(),
             GameKind::TriPeaks => self.tripeaks.can_redo(),
+            GameKind::Pyramid => self.pyramid.can_redo(),
         }
     }
 
@@ -828,6 +922,7 @@ impl Controller {
             GameKind::Spider => self.spider_save_path.as_deref(),
             GameKind::FreeCell => self.freecell_save_path.as_deref(),
             GameKind::TriPeaks => self.tripeaks_save_path.as_deref(),
+            GameKind::Pyramid => self.pyramid_save_path.as_deref(),
         };
         let Some(path) = path else {
             self.status = "No save path is available; ownership was not changed".into();
@@ -853,7 +948,7 @@ impl Controller {
     fn discard_unsaved_and_close(&mut self) {
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
-        self.dirty = [false; 4];
+        self.dirty = [false; 5];
         self.status = "Unsaved progress discarded; closing".into();
     }
 
@@ -883,6 +978,12 @@ impl Controller {
                     revision
                 })
             }),
+            GameKind::Pyramid => self.pyramid_save_path.clone().map(|path| {
+                load_pyramid_revisioned(&path).map(|(game, revision)| {
+                    self.pyramid = game;
+                    revision
+                })
+            }),
         };
         match result {
             Some(Ok(revision)) => {
@@ -904,6 +1005,32 @@ impl Controller {
             None => self.status = "No save path is available; in-memory changes remain".into(),
         }
     }
+}
+
+fn load_initial_pyramid(
+    seed: u64,
+    status: &mut String,
+) -> (PyramidGame, Option<PathBuf>, Option<SaveRevision>) {
+    let mut path = default_pyramid_save_path();
+    let (game, revision) = load_or_recover(&mut path, recover_pyramid_revisioned, status)
+        .map_or_else(
+            || {
+                (
+                    PyramidGame::new(seed.wrapping_add(4), pyramid::Options::default()),
+                    None,
+                )
+            },
+            |(game, revision)| (game, Some(revision)),
+        );
+    (game, path, revision)
+}
+
+fn raise_deal_counters(counters: &mut DealCounters, minimum: DealCounters) {
+    counters.klondike = counters.klondike.max(minimum.klondike);
+    counters.spider = counters.spider.max(minimum.spider);
+    counters.freecell = counters.freecell.max(minimum.freecell);
+    counters.tripeaks = counters.tripeaks.max(minimum.tripeaks);
+    counters.pyramid = counters.pyramid.max(minimum.pyramid);
 }
 
 fn load_or_recover<T>(
@@ -948,6 +1075,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
     app.on_fan_spacing(bounded_fan_spacing);
     app.on_tripeaks_x(tripeaks_x);
+    app.on_pyramid_x(pyramid_x);
+    app.on_pyramid_y(pyramid_y);
     let controller = Rc::new(RefCell::new(Controller::new()));
     {
         let weak = app.as_weak();
@@ -1073,6 +1202,29 @@ fn register_spider_freecell_handlers(app: &AppWindow, controller: &Rc<RefCell<Co
             });
         });
     }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_pyramid_draw_stock(move || {
+            update(&weak, &controller, Controller::draw_pyramid_stock);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_pyramid_waste_activated(move || {
+            update(&weak, &controller, Controller::activate_pyramid_waste);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_pyramid_tableau_activated(move |index| {
+            update(&weak, &controller, |state| {
+                state.activate_pyramid_card(index);
+            });
+        });
+    }
 }
 
 fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller>>) {
@@ -1195,6 +1347,7 @@ fn render(app: &AppWindow, controller: &Controller) {
         GameKind::Spider => render_spider(app, controller),
         GameKind::FreeCell => render_freecell(app, controller),
         GameKind::TriPeaks => render_tripeaks(app, controller),
+        GameKind::Pyramid => render_pyramid(app, controller),
     }
 }
 
@@ -1261,9 +1414,12 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_free_cells(ModelRc::default());
     app.set_free_cell_occupied(ModelRc::default());
     app.set_tripeaks_cards(ModelRc::default());
+    app.set_pyramid_cards(ModelRc::default());
     app.set_longest_column(longest_column(&state.tableau));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
     app.set_deal_number(SharedString::default());
+    app.set_redeals(0);
+    app.set_redeals_remaining(0);
 }
 
 fn render_spider(app: &AppWindow, controller: &Controller) {
@@ -1293,6 +1449,7 @@ fn render_spider(app: &AppWindow, controller: &Controller) {
     app.set_free_cells(ModelRc::default());
     app.set_free_cell_occupied(ModelRc::default());
     app.set_tripeaks_cards(ModelRc::default());
+    app.set_pyramid_cards(ModelRc::default());
     app.set_has_waste(false);
     app.set_stock_count(i32::try_from(state.stock.len()).unwrap_or_default());
     app.set_score(state.score);
@@ -1301,6 +1458,8 @@ fn render_spider(app: &AppWindow, controller: &Controller) {
     app.set_longest_column(longest_column(&state.columns));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
     app.set_deal_number(SharedString::default());
+    app.set_redeals(0);
+    app.set_redeals_remaining(0);
 }
 
 fn render_freecell(app: &AppWindow, controller: &Controller) {
@@ -1354,6 +1513,7 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
             .collect::<Vec<_>>(),
     )));
     app.set_tripeaks_cards(ModelRc::default());
+    app.set_pyramid_cards(ModelRc::default());
     let foundations = Suit::ALL
         .into_iter()
         .map(|suit| {
@@ -1382,6 +1542,8 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
     app.set_longest_column(longest_column(&state.cascades));
     app.set_deal_id(i32::try_from(state.deal_number).unwrap_or(i32::MAX));
     app.set_deal_number(SharedString::default());
+    app.set_redeals(0);
+    app.set_redeals_remaining(0);
 }
 
 fn render_tripeaks(app: &AppWindow, controller: &Controller) {
@@ -1402,6 +1564,7 @@ fn render_tripeaks(app: &AppWindow, controller: &Controller) {
         })
         .collect::<Vec<_>>();
     app.set_tripeaks_cards(ModelRc::new(VecModel::from(cards)));
+    app.set_pyramid_cards(ModelRc::default());
     app.set_columns(ModelRc::default());
     app.set_foundations(ModelRc::default());
     app.set_free_cells(ModelRc::default());
@@ -1426,6 +1589,68 @@ fn render_tripeaks(app: &AppWindow, controller: &Controller) {
     app.set_longest_column(0);
     app.set_deal_id(0);
     app.set_deal_number(tripeaks_deal_number(state.seed));
+    app.set_redeals(0);
+    app.set_redeals_remaining(0);
+}
+
+fn render_pyramid(app: &AppWindow, controller: &Controller) {
+    let state = &controller.pyramid.state;
+    let cards = state
+        .pyramid
+        .iter()
+        .enumerate()
+        .map(|(index, card)| {
+            let present = card.is_some();
+            let exposed = state.is_exposed(index);
+            let card = card.unwrap_or(Card::new(Suit::Clubs, Rank::Ace));
+            let source = pyramid::Source::Pyramid(to_u8(index));
+            UiPyramidCard {
+                card: pyramid_ui_card(
+                    card,
+                    exposed,
+                    controller.pyramid_selection == Some(source),
+                    index + 1,
+                ),
+                present,
+            }
+        })
+        .collect::<Vec<_>>();
+    app.set_pyramid_cards(ModelRc::new(VecModel::from(cards)));
+    app.set_tripeaks_cards(ModelRc::default());
+    app.set_columns(ModelRc::default());
+    app.set_foundations(ModelRc::default());
+    app.set_free_cells(ModelRc::default());
+    app.set_free_cell_occupied(ModelRc::default());
+    if let Some(card) = state.waste.last() {
+        let selected = controller.pyramid_selection == Some(pyramid::Source::Waste);
+        app.set_has_waste(true);
+        app.set_waste_card(UiCard {
+            label: card_label(*card).into(),
+            red: matches!(card.suit, Suit::Diamonds | Suit::Hearts),
+            face_up: true,
+            selected,
+            accessible_label: format!(
+                "Pyramid waste, {}{}; activate to select or remove",
+                card_name(*card),
+                if selected { ", selected" } else { "" }
+            )
+            .into(),
+        });
+    } else {
+        app.set_has_waste(false);
+        app.set_waste_card(ui_card(Card::new(Suit::Clubs, Rank::Ace), false, false));
+    }
+    app.set_stock_count(i32::try_from(state.stock.len()).unwrap_or_default());
+    app.set_score(i32::try_from(state.score).unwrap_or(i32::MAX));
+    app.set_moves(i32::try_from(state.moves).unwrap_or(i32::MAX));
+    app.set_completed_runs(0);
+    app.set_longest_column(0);
+    app.set_deal_id(0);
+    app.set_deal_number(pyramid_deal_number(state.seed));
+    app.set_redeals(i32::from(state.redeals));
+    app.set_redeals_remaining(i32::from(
+        state.options.max_redeals.saturating_sub(state.redeals),
+    ));
 }
 
 fn longest_column<T, const N: usize>(columns: &[Vec<T>; N]) -> i32 {
@@ -1481,7 +1706,35 @@ fn tripeaks_ui_card(card: Card, exposed: bool, position: usize) -> UiCard {
     }
 }
 
+fn pyramid_ui_card(card: Card, exposed: bool, selected: bool, position: usize) -> UiCard {
+    if exposed {
+        return UiCard {
+            label: card_label(card).into(),
+            red: matches!(card.suit, Suit::Diamonds | Suit::Hearts),
+            face_up: true,
+            selected,
+            accessible_label: format!(
+                "{}, Pyramid tableau position {position}, exposed{}",
+                card_name(card),
+                if selected { ", selected" } else { "" }
+            )
+            .into(),
+        };
+    }
+    UiCard {
+        label: SharedString::default(),
+        red: false,
+        face_up: false,
+        selected: false,
+        accessible_label: format!("Pyramid tableau position {position}, covered, face-down").into(),
+    }
+}
+
 fn tripeaks_deal_number(seed: u64) -> SharedString {
+    seed.to_string().into()
+}
+
+fn pyramid_deal_number(seed: u64) -> SharedString {
     seed.to_string().into()
 }
 
@@ -1621,6 +1874,41 @@ fn describe_tripeaks_action(action: tripeaks::Action) -> String {
     }
 }
 
+fn describe_pyramid_action(action: pyramid::Action) -> String {
+    match action {
+        pyramid::Action::Draw => "drawing the next Pyramid stock card".into(),
+        pyramid::Action::Recycle => "recycling the Pyramid waste".into(),
+        pyramid::Action::RemoveKing(source) => {
+            format!("removing the king at {}", pyramid_source_name(source))
+        }
+        pyramid::Action::RemovePair(first, second) => format!(
+            "removing the pair at {} and {}",
+            pyramid_source_name(first),
+            pyramid_source_name(second)
+        ),
+    }
+}
+
+fn pyramid_source_name(source: pyramid::Source) -> String {
+    match source {
+        pyramid::Source::Pyramid(index) => format!("tableau position {}", index + 1),
+        pyramid::Source::Waste => "the waste".into(),
+    }
+}
+
+fn pyramid_source_card(state: &pyramid::State, source: pyramid::Source) -> Option<Card> {
+    match source {
+        pyramid::Source::Pyramid(index) => {
+            let index = usize::from(index);
+            state
+                .is_exposed(index)
+                .then(|| state.pyramid.get(index).copied().flatten())
+                .flatten()
+        }
+        pyramid::Source::Waste => state.waste.last().copied(),
+    }
+}
+
 fn friendly_error(error: solitaire::klondike::MoveError) -> String {
     use solitaire::klondike::MoveError;
     match error {
@@ -1698,6 +1986,28 @@ fn friendly_tripeaks_error(error: tripeaks::MoveError) -> String {
     }
 }
 
+fn friendly_pyramid_error(error: pyramid::MoveError) -> String {
+    match error {
+        pyramid::MoveError::EmptyStock => "The Pyramid stock is empty".into(),
+        pyramid::MoveError::CannotRecycle => {
+            "Draw the remaining Pyramid stock before recycling".into()
+        }
+        pyramid::MoveError::RedealLimit => "No Pyramid redeals remain".into(),
+        pyramid::MoveError::CoveredCard => "That Pyramid card is still covered".into(),
+        pyramid::MoveError::NotKing => "Only a king can be removed by itself".into(),
+        pyramid::MoveError::SameCard => "Choose two different cards".into(),
+        pyramid::MoveError::NotThirteen => "Choose two exposed cards whose ranks total 13".into(),
+        pyramid::MoveError::ResourceLimit => {
+            "This deal reached the 4096-action replay limit; start a new deal to continue".into()
+        }
+        pyramid::MoveError::CounterOverflow => {
+            "This deal reached a numeric limit; the move was not applied".into()
+        }
+        pyramid::MoveError::GameComplete => "Pyramid is complete; undo or start a new deal".into(),
+        _ => "That Pyramid move is not available".into(),
+    }
+}
+
 fn bounded_fan_spacing(card_count: i32, available_height: f32) -> f32 {
     const CARD_HEIGHT: f32 = 142.0;
     const MIN_SPACING: f32 = 1.0;
@@ -1726,6 +2036,30 @@ fn tripeaks_x(index: i32, available_width: f32) -> f32 {
         _ => 0.0,
     };
     slot * step
+}
+
+fn pyramid_x(index: i32, available_width: f32) -> f32 {
+    let Some((row, column)) = pyramid_position(index) else {
+        return 0.0;
+    };
+    let step = ((available_width - 104.0) / 6.0).max(0.0);
+    let slot = f32::from(column) + f32::from(6 - row) / 2.0;
+    slot * step
+}
+
+fn pyramid_y(index: i32) -> f32 {
+    pyramid_position(index).map_or(0.0, |(row, _)| f32::from(row) * 38.0)
+}
+
+fn pyramid_position(index: i32) -> Option<(i16, i16)> {
+    let index = i16::try_from(index)
+        .ok()
+        .filter(|index| (0..28).contains(index))?;
+    let mut row = 0_i16;
+    while (row + 1) * (row + 2) / 2 <= index {
+        row += 1;
+    }
+    Some((row, index - row * (row + 1) / 2))
 }
 
 fn to_u8(value: usize) -> u8 {
@@ -1763,8 +2097,11 @@ mod tests {
             freecell_save_path: None,
             tripeaks: TriPeaksGame::new(seed, tripeaks::Options::default()),
             tripeaks_save_path: None,
-            save_revisions: [None; 4],
-            dirty: [false; 4],
+            pyramid: PyramidGame::new(seed, pyramid::Options::default()),
+            pyramid_selection: None,
+            pyramid_save_path: None,
+            save_revisions: [None; 5],
+            dirty: [false; 5],
             pending_new_deal: None,
             pending_new_deal_conflict: false,
             deal_counters_path: None,
@@ -1773,6 +2110,7 @@ mod tests {
                 spider: seed.saturating_add(1),
                 freecell: seed.saturating_add(1),
                 tripeaks: seed.saturating_add(1),
+                pyramid: seed.saturating_add(1),
             },
             status: "Ready".into(),
         }
@@ -1941,6 +2279,124 @@ mod tests {
         assert_eq!(
             controller.status,
             "TriPeaks is complete; undo or start a new deal"
+        );
+    }
+
+    #[test]
+    fn pyramid_surface_routes_standard_play_history_and_reopen() {
+        let path = test_save("pyramid-surface");
+        remove_save(&path);
+        let mut controller = controller(85);
+        controller.select_game("Pyramid");
+        controller.pyramid_save_path = Some(path.clone());
+        controller.new_game("Standard");
+        assert_eq!(controller.pyramid.state.options.max_redeals, 2);
+
+        match controller.pyramid.hint().unwrap() {
+            pyramid::Action::Draw | pyramid::Action::Recycle => controller.draw_pyramid_stock(),
+            pyramid::Action::RemoveKing(source) => controller.activate_pyramid_source(source),
+            pyramid::Action::RemovePair(first, second) => {
+                controller.activate_pyramid_source(first);
+                controller.activate_pyramid_source(second);
+            }
+        }
+        assert!(controller.pyramid.can_undo());
+        let moved = controller.pyramid.state.clone();
+        controller.undo();
+        assert!(controller.pyramid.can_redo());
+        controller.redo();
+        assert_eq!(controller.pyramid.state, moved);
+        assert_eq!(load_pyramid_revisioned(&path).unwrap().0.state, moved);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn pyramid_save_conflict_preserves_memory_until_reload() {
+        let path = test_save("pyramid-conflict");
+        remove_save(&path);
+        let mut controller = controller(86);
+        controller.select_game("Pyramid");
+        controller.pyramid_save_path = Some(path.clone());
+        assert!(controller.save());
+
+        let disk_game = PyramidGame::new(999, pyramid::Options::default());
+        solitaire::persistence::save_pyramid(&path, &disk_game).unwrap();
+        controller.draw_pyramid_stock();
+        assert!(controller.dirty[4]);
+        assert!(controller.status.contains("save changed in another"));
+
+        controller.reload_disk_copy();
+        assert_eq!(controller.pyramid, disk_game);
+        assert!(!controller.dirty[4]);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn pyramid_counter_overflow_preserves_current_deal() {
+        let mut controller = controller(87);
+        controller.select_game("Pyramid");
+        controller.next_seeds.pyramid = u64::MAX;
+        let current = controller.pyramid.clone();
+        controller.new_game("Standard");
+        assert_eq!(controller.pyramid, current);
+        assert!(controller.pending_new_deal.is_some());
+        assert!(controller.status.contains("No further deal number"));
+    }
+
+    #[test]
+    fn pyramid_layout_positions_all_seven_rows_inside_the_surface() {
+        let width = 1084.0;
+        for index in 0..28 {
+            let x = pyramid_x(index, width);
+            let y = pyramid_y(index);
+            assert!((0.0..=width - 104.0).contains(&x));
+            assert!((0.0..=228.0).contains(&y));
+        }
+        assert!((pyramid_x(0, width) - (width - 104.0) / 2.0).abs() < f32::EPSILON);
+        assert!(pyramid_x(21, width).abs() < f32::EPSILON);
+        assert!((pyramid_x(27, width) - (width - 104.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn pyramid_card_model_hides_covered_identity_and_names_selection() {
+        let card = Card::new(Suit::Diamonds, Rank::Five);
+        let covered = pyramid_ui_card(card, false, false, 3);
+        assert!(!covered.face_up);
+        assert!(!covered.red);
+        assert!(covered.label.is_empty());
+        assert_eq!(
+            covered.accessible_label.as_str(),
+            "Pyramid tableau position 3, covered, face-down"
+        );
+        assert!(!covered.accessible_label.contains("Five"));
+        assert!(!covered.accessible_label.contains("diamonds"));
+
+        let exposed = pyramid_ui_card(card, true, true, 22);
+        assert!(exposed.face_up);
+        assert!(exposed.red);
+        assert!(exposed.selected);
+        assert_eq!(exposed.label.as_str(), "5♦");
+        assert!(exposed.accessible_label.contains("Five of diamonds"));
+        assert!(exposed.accessible_label.contains("selected"));
+    }
+
+    #[test]
+    fn pyramid_deal_number_preserves_full_u64_seed() {
+        let seed = u64::from(u32::MAX) + 29;
+        assert_eq!(pyramid_deal_number(seed).as_str(), seed.to_string());
+    }
+
+    #[test]
+    fn pyramid_completion_error_is_actionable_and_preserves_state() {
+        let mut controller = controller(88);
+        controller.select_game("Pyramid");
+        controller.pyramid.state.pyramid = [None; 28];
+        let complete = controller.pyramid.clone();
+        controller.draw_pyramid_stock();
+        assert_eq!(controller.pyramid, complete);
+        assert_eq!(
+            controller.status,
+            "Pyramid is complete; undo or start a new deal"
         );
     }
 
@@ -2127,13 +2583,13 @@ mod tests {
     #[test]
     fn discard_and_close_explicitly_releases_the_close_guard() {
         let mut controller = controller(404);
-        controller.dirty = [true; 4];
+        controller.dirty = [true; 5];
         controller.new_game("Draw 1");
         assert!(controller.pending_new_deal.is_some());
 
         controller.discard_unsaved_and_close();
 
-        assert_eq!(controller.dirty, [false; 4]);
+        assert_eq!(controller.dirty, [false; 5]);
         assert!(controller.pending_new_deal.is_none());
         assert!(controller.status.contains("closing"));
     }
