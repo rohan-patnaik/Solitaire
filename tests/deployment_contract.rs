@@ -59,13 +59,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
-    assert!(metadata.contains("22e4d2434bfea8762309448e2f95d62f75c42d14"));
-    assert!(metadata.contains("actions/runs/32570366866"));
+    assert!(metadata.contains("447fa319cc05bcb509735d9d124a4daa5f35ffcb"));
+    assert!(metadata.contains("actions/runs/32579498934"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("22e4d2434bfea8762309448e2f95d62f75c42d14"));
-    assert!(generated.contains("actions/runs/32570366866"));
+    assert!(generated.contains("447fa319cc05bcb509735d9d124a4daa5f35ffcb"));
+    assert!(generated.contains("actions/runs/32579498934"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
 }
@@ -105,7 +105,7 @@ fn tripeaks_surface_declares_keyboard_and_accessibility_contracts() {
     let ui = include_str!("../ui/app.slint");
     let controller = include_str!("../src/main.rs");
     for contract in [
-        "model: [\"Klondike\", \"Spider\", \"FreeCell\", \"TriPeaks\"]",
+        "model: [\"Klondike\", \"Spider\", \"FreeCell\", \"Pyramid\", \"TriPeaks\"]",
         "callback tripeaks-draw-stock",
         "callback tripeaks-tableau-activated",
         "Start the next standard TriPeaks deal",
@@ -121,6 +121,31 @@ fn tripeaks_surface_declares_keyboard_and_accessibility_contracts() {
     assert!(controller.contains("tableau position {position}, exposed"));
     assert!(controller.contains("Tableau position {position}, covered, face-down"));
     assert!(controller.contains("Waste card, {}; activate to draw the next stock card"));
+    assert!(ui.contains("Deal  \" + root.deal-number"));
+}
+
+#[test]
+fn pyramid_surface_declares_keyboard_and_accessibility_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    for contract in [
+        "model: [\"Klondike\", \"Spider\", \"FreeCell\", \"Pyramid\", \"TriPeaks\"]",
+        "callback pyramid-draw-stock",
+        "callback pyramid-waste-activated",
+        "callback pyramid-tableau-activated",
+        "Start the next standard Pyramid deal",
+        "Standard Pyramid uses pair-to-13 rules and two redeals",
+        "accessible-action-default => { root.activated(); }",
+        "accessible-live-region: polite",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing Pyramid UI contract: {contract}"
+        );
+    }
+    assert!(controller.contains("Pyramid tableau position {position}, exposed"));
+    assert!(controller.contains("Pyramid tableau position {position}, covered, face-down"));
+    assert!(controller.contains("Pyramid waste, {}{}; activate to select or remove"));
     assert!(ui.contains("Deal  \" + root.deal-number"));
 }
 

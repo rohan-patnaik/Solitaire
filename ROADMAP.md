@@ -23,7 +23,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Klondike has a playable vertical slice, but the remaining M1 product workflows below are not yet complete.
 - Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Real Omarchy visual and assistive-technology acceptance is still pending.
 - TriPeaks standard mode now has a playable Slint surface backed by its deterministic engine, with numbered deals, undo/redo, hints, replay save/resume, bounded recovery, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
-- Pyramid remains engine-only and must not be presented as a playable collection entry yet.
+- Pyramid standard mode now has a playable original Slint surface backed by its deterministic engine, with numbered deals, pair-to-13 and king removal, two redeals, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - The collection layer and release-quality work remain open.
 
 ### M0 — foundation
@@ -51,6 +51,7 @@ Functional parity is achievable for the five core games and common collection fe
 - TriPeaks adjacency/run rules, streak scoring, wild-card variant as an original optional mode.
 - Touch-friendly targets without imitating Microsoft layouts.
 - Standard-mode TriPeaks is playable through the original Slint layout. Optional wild-card work, touch/platform acceptance, and broader evidence remain open.
+- Standard Pyramid is playable through an original seven-row Slint layout. Solvability metadata, optional rule variants, touch/platform acceptance, and broader evidence remain open.
 
 ### M4 — collection layer
 
