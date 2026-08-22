@@ -1,6 +1,6 @@
-# Solitaire
+# Solitaire — five-game alpha
 
-An offline, ad-free collection of five classic patience games for Omarchy Quattro: Klondike, Spider, FreeCell, Pyramid, and TriPeaks.
+An offline, ad-free alpha of five classic patience games for Omarchy Quattro: Klondike, Spider, FreeCell, Pyramid, and TriPeaks.
 
 This project implements public-domain game mechanics with its own code and original visual/audio presentation. It does not copy Microsoft card faces, card backs, backgrounds, animations, sounds, wording, screenshots, or layout.
 
@@ -13,9 +13,9 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 ## Status
 
-M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
+This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
-Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md). An exact-SHA real Omarchy/Wayland pass verified installed keyboard play, local-profile recovery, plugin summon, and native-process survival across a shell restart; its evidence and remaining gaps are recorded in [docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md](docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md).
+See the [alpha install, demonstrated workflows, privacy boundary, and known limits](docs/ALPHA_RELEASE.md). Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Build
 
@@ -51,10 +51,10 @@ The active game's local statistics count a deal as played on its first successfu
 
 ## Omarchy plugin
 
-After installing the native binary on `PATH` as `solitaire`:
+Follow the [exact accepted Arch package instructions](docs/ALPHA_RELEASE.md#install-the-exact-accepted-arch-package), then install and summon the thin launcher:
 
 ```sh
-omarchy plugin add https://github.com/rohan-patnaik/Solitaire.git --enable
+omarchy plugin add https://github.com/rohan-patnaik/Solitaire.git --enable --yes
 omarchy-shell shell summon io.github.rohan-patnaik.solitaire '{}'
 ```
 

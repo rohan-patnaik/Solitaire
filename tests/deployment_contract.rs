@@ -59,27 +59,30 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
-    assert!(metadata.contains("1595fb02488525629c3f7d4aa1962e12c99198c0"));
-    assert!(metadata.contains("actions/runs/32586839845"));
+    assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
+    assert!(metadata.contains("actions/runs/32591449130"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("1595fb02488525629c3f7d4aa1962e12c99198c0"));
-    assert!(generated.contains("actions/runs/32586839845"));
+    assert!(generated.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
+    assert!(generated.contains("actions/runs/32591449130"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
 }
 
 #[test]
-fn real_omarchy_evidence_keeps_acceptance_gaps_explicit() {
-    let evidence = include_str!("../docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md");
+fn alpha_release_evidence_keeps_acceptance_gaps_explicit() {
+    let evidence = include_str!("../docs/ALPHA_RELEASE.md");
     for contract in [
-        "1595fb02488525629c3f7d4aa1962e12c99198c0",
+        "f6b0cb7e55d296bdf77714efc48a1775b858c041",
+        "all five games",
         "omarchy-shell shell summon",
         "omarchy restart shell",
         "Live missing-binary and immediate-startup-failure notifications",
-        "Orca was unavailable",
-        "No complete deal was won through the installed UI",
+        "Orca was not installed",
+        "No five complete wins were played through the installed UI",
+        "Achievements are deferred",
+        "all applicable capability rows remain Partial",
     ] {
         assert!(
             evidence.contains(contract),
