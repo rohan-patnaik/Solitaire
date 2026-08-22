@@ -59,15 +59,33 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let metadata = include_str!("../docs/offline-capabilities.json");
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
-    assert!(metadata.contains("7aec70f0f2061dcc44d49bedcb4a0a7b1ae32143"));
-    assert!(metadata.contains("actions/runs/32582899798"));
+    assert!(metadata.contains("1595fb02488525629c3f7d4aa1962e12c99198c0"));
+    assert!(metadata.contains("actions/runs/32586839845"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("7aec70f0f2061dcc44d49bedcb4a0a7b1ae32143"));
-    assert!(generated.contains("actions/runs/32582899798"));
+    assert!(generated.contains("1595fb02488525629c3f7d4aa1962e12c99198c0"));
+    assert!(generated.contains("actions/runs/32586839845"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
+}
+
+#[test]
+fn real_omarchy_evidence_keeps_acceptance_gaps_explicit() {
+    let evidence = include_str!("../docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md");
+    for contract in [
+        "1595fb02488525629c3f7d4aa1962e12c99198c0",
+        "omarchy-shell shell summon",
+        "omarchy restart shell",
+        "Live missing-binary and immediate-startup-failure notifications",
+        "Orca was unavailable",
+        "No complete deal was won through the installed UI",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing acceptance boundary: {contract}"
+        );
+    }
 }
 
 #[test]

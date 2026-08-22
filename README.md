@@ -15,7 +15,7 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
-Broader hostile/property coverage, the collection layer, and final real-Omarchy acceptance remain tracked in [ROADMAP.md](ROADMAP.md).
+Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md). An exact-SHA real Omarchy/Wayland pass verified installed keyboard play, local-profile recovery, plugin summon, and native-process survival across a shell restart; its evidence and remaining gaps are recorded in [docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md](docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md).
 
 ## Build
 

@@ -25,6 +25,7 @@ Functional parity is achievable for the five core games and common collection fe
 - TriPeaks standard mode now has a playable Slint surface backed by its deterministic engine, with numbered deals, undo/redo, hints, replay save/resume, bounded recovery, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - Pyramid standard mode now has a playable original Slint surface backed by its deterministic engine, with numbered deals, pair-to-13 and king removal, two redeals, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Real-platform acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - A bounded anonymous device-local profile now records per-game deals played and won from proven controller lifecycle transitions. Named profiles, achievements, streaks, import/export, sync, broader collection workflows, and release-quality work remain open.
+- Real Omarchy/Wayland acceptance at exact published SHA `1595fb02488525629c3f7d4aa1962e12c99198c0` verified the installed binary, keyboard play, local-profile save/reopen and recovery, live plugin summon, shell responsiveness, and detached native-process survival across a supported shell restart. Orca output, unclipped long errors, a won-deal UI transition, and live missing-binary/startup-failure notification evidence remain open.
 
 ### M0 — foundation
 
@@ -67,6 +68,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Responsive animations, 60 Hz frame pacing, startup/memory budgets, battery profiling.
 - Reproducible Arch package/AppImage, signed checksums, SBOM, fuzzing of save/replay files.
 - Omarchy validation on a real Quattro machine and marketplace submission.
+- A first real Omarchy/Wayland pass is recorded in `docs/OMARCHY_WAYLAND_ACCEPTANCE_1595FB0.md`; its documented gaps and marketplace submission remain open.
 
 ## Copyright and provenance gate
 
