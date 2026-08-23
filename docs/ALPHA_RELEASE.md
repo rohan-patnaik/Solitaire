@@ -14,7 +14,7 @@ Git, `fontconfig`, `wayland`, and `libxkbcommon`.
 ```sh
 git clone https://github.com/rohan-patnaik/Solitaire.git
 cd Solitaire
-git switch --detach f6b0cb7e55d296bdf77714efc48a1775b858c041
+git switch --detach d20ba4111deb2e948e593fbeec4ca2c45b597bef
 
 revision=$(git rev-parse HEAD)
 source_root=$(mktemp -d)
@@ -30,10 +30,11 @@ SOLITAIRE_SOURCE_ARCHIVE="$source_archive" \
 SOLITAIRE_SOURCE_SHA256="$source_sha256" \
 SOLITAIRE_EXPECTED_REVISION="$revision" \
   makepkg --cleanbuild --clean --noconfirm
-sudo pacman -U ./solitaire-omarchy-0.1.0.r0.gf6b0cb7-1-x86_64.pkg.tar.zst
+sudo pacman -U ./solitaire-omarchy-0.1.0.r0.gd20ba41-1-x86_64.pkg.tar.zst
 ```
 
-The exact-tip CI built, checked, installed, and verified that package revision.
+The exact-tip [CI run 32638817768](https://github.com/rohan-patnaik/Solitaire/actions/runs/32638817768)
+built, checked, installed, and verified that application revision.
 The local evidence package was unsigned; signed checksums and release-upgrade
 evidence remain open.
 
@@ -52,6 +53,16 @@ installed native window appearing, Quickshell remaining responsive, and the
 same native process surviving `omarchy restart shell`.
 
 ## Demonstrated alpha workflows
+
+At published revision `d20ba4111deb2e948e593fbeec4ca2c45b597bef`
+(tree `d01c6f635bfb73e0e47838ac3f0287c6889c1069`), a focused installed-package
+pass accepted keyboard stock deal, undo/redo, save/reopen, and AT-SPI identity
+and action semantics in Spider one-, two-, and four-suit modes. It also accepted
+the dedicated long-status surface visually, by keyboard, and through AT-SPI at
+1180x820. The exact package was `solitaire-omarchy 0.1.0.r0.gd20ba41-1`;
+`pacman -Qkk` reported nine files and no altered files. Exact observations and
+remaining boundaries are recorded in
+[`OMARCHY_WAYLAND_ACCEPTANCE_D20BA41.md`](OMARCHY_WAYLAND_ACCEPTANCE_D20BA41.md).
 
 At published revision `f6b0cb7e55d296bdf77714efc48a1775b858c041`
 (tree `7d3118ed8a6ab81239ed15ffcfc9e3095d2d1097`), exact-tip CI
@@ -95,11 +106,12 @@ package files.
   TriPeaks modes remain incomplete or unverified.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
-- Long malformed-save and conflict messages now use a dedicated full-width,
-  character-wrapped, vertically scrollable display-only live region at the default
-  1180x820 window size, while recovery controls remain in their existing
-  keyboard order. Exact-package Wayland visual and AT-SPI acceptance of this
-  new surface remains pending.
+- Long malformed-save and conflict messages use a dedicated full-width,
+  character-wrapped, vertically scrollable display-only live region. Exact
+  package acceptance at `d20ba41` confirmed the complete text was visually and
+  programmatically reachable at 1180x820, recovery controls remained in their
+  keyboard order, and a subsequent short status returned to view. Full
+  keyboard-only traversal and spoken screen-reader acceptance remain pending.
 - Achievements are deferred. There is no achievement taxonomy, named profile,
   streak system, import/export, sync, or multi-process merge.
 - Cross-file transactions, crash injection, power-loss recovery, gamepad

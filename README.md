@@ -32,7 +32,7 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Select a face-up card or complete run, then select a tableau column or foundation.
 - Select the stock to draw or recycle the waste.
 - Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
-- Card and empty-slot controls declare assistive-technology names/default actions, accept Tab focus plus Space/Enter activation, and declare status changes as a polite live region. These are implementation contracts, not real-platform acceptance evidence; screen-reader acceptance and full gamepad navigation remain M5 work.
+- Card and empty-slot controls declare assistive-technology names/default actions, accept Tab focus plus Space/Enter activation, and declare status changes as a polite live region. Focused installed passes exercised these semantics through keyboard input and AT-SPI; full keyboard-only traversal, spoken screen-reader output, and gamepad navigation remain M5 work.
 - Choose draw one or draw three before starting a new deal.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
@@ -45,7 +45,7 @@ The active game's local statistics count a deal as played on its first successfu
 - In Spider, select a face-up card or same-suit run, then choose another column. Use the stock control to deal a row; every column must be occupied.
 - In FreeCell, select a card or alternating run, then choose a cascade, free cell, or suit foundation. Movable run size is derived from the available free cells and empty cascades.
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
-- Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Real assistive-technology acceptance remains pending.
+- Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Installed AT-SPI acceptance covers the five game surfaces and all three Spider suit modes; full keyboard-only traversal and spoken screen-reader output remain pending.
 - In standard Pyramid, activate an exposed king to remove it, or activate two exposed tableau/waste cards whose ranks total 13. The original seven-row layout exposes the exact deal number, stock, waste, score, move count, redeals, hints, and win status. Covered-card identities stay hidden visually and from accessible names.
 - In standard TriPeaks, activate an exposed tableau card one rank above or below the waste, without King/Ace wraparound, or activate the stock/waste control to draw. The original four-row layout exposes deal, stock, waste, streak score, move count, hints, and win status without copying vendor presentation.
 

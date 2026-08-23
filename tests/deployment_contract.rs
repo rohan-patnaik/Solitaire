@@ -60,12 +60,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let generated = include_str!("../docs/OFFLINE_CAPABILITIES.md");
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
-    assert!(metadata.contains("actions/runs/32591449130"));
+    assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
+    assert!(metadata.contains("actions/runs/32638817768"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
-    assert!(generated.contains("actions/runs/32591449130"));
+    assert!(generated.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
+    assert!(generated.contains("actions/runs/32638817768"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 0 |"));
 }
@@ -89,6 +90,44 @@ fn alpha_release_evidence_keeps_acceptance_gaps_explicit() {
             "missing acceptance boundary: {contract}"
         );
     }
+}
+
+#[test]
+fn spider_variant_acceptance_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/OMARCHY_WAYLAND_ACCEPTANCE_D20BA41.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "d20ba4111deb2e948e593fbeec4ca2c45b597bef",
+        "d01c6f635bfb73e0e47838ac3f0287c6889c1069",
+        "actions/runs/32638817768",
+        "solitaire-omarchy 0.1.0.r0.gd20ba41-1",
+        "13c046bd855a7d03ef3652361a59983aa98d20ad0306a3d24181ee79219361c6",
+        "a9978c21b0c303ecdf741455066617b6def6b467a328dde27b9b07600668cd05",
+        "9 total files, 0 altered files",
+        "3a964a66fdc02dbb8b91dcf22b6b4467f1f10fe7354cc3f772892768c290c986",
+        "c23d413fd52598590c9809c2844ee447679dbc396feef9c9f60a9b5d22babe08",
+        "one, two, and four suits",
+        "50 cards\\nDeal row",
+        "50/500/0",
+        "40/499/1",
+        "visible fourth column",
+        "Move { from: 3, to: 4, count: 1 }",
+        "Only a descending same-suit run can move together",
+        "Face-down card",
+        "Page Down reached its final",
+        "Status details. Use arrow keys to scroll status messages",
+        "No complete Spider deal was won",
+        "Broader hostile/property coverage and drag/touch behavior remain pending",
+        "Full keyboard-only traversal and Orca spoken-output acceptance remain",
+        "Live missing-binary and immediate-startup-failure launcher notifications",
+        "Reproducibility, signed checksums, SBOM",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing focused acceptance boundary: {contract}"
+        );
+    }
+    assert_eq!(catalog.matches("\"status\":\"complete\"").count(), 0);
 }
 
 #[test]
