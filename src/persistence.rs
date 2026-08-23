@@ -451,21 +451,32 @@ pub fn load_freecell_revisioned(path: &Path) -> Result<(freecell::Game, SaveRevi
 /// Saves a standard-mode `TriPeaks` game as a versioned deterministic replay.
 ///
 /// # Errors
-/// Returns an I/O or serialization error if the atomic save fails.
+/// Returns an error for nonstandard options or if serialization or the atomic save fails.
 pub fn save_tripeaks(path: &Path, game: &tripeaks::Game) -> Result<(), SaveError> {
+    validate_standard_tripeaks(game.state.options)?;
     save_replay(path, "tripeaks", &game.replay())
 }
 
 /// Saves `TriPeaks` only if the on-disk revision still matches `expected`.
 ///
 /// # Errors
-/// Returns a typed error for stale ownership, bounded I/O, or serialization.
+/// Returns a typed error for nonstandard options, stale ownership, bounded I/O, or serialization.
 pub fn save_tripeaks_checked(
     path: &Path,
     game: &tripeaks::Game,
     expected: &mut Option<SaveRevision>,
 ) -> Result<(), SaveError> {
+    validate_standard_tripeaks(game.state.options)?;
     save_replay_checked(path, "tripeaks", &game.replay(), expected)
+}
+
+fn validate_standard_tripeaks(options: tripeaks::Options) -> Result<(), SaveError> {
+    if options != tripeaks::Options::default() {
+        return Err(SaveError::InvalidReplay(
+            "standard TriPeaks saves do not allow rank wraparound".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Loads and legally reconstructs a `TriPeaks` game from its saved replay.
@@ -479,6 +490,7 @@ pub fn load_tripeaks(path: &Path) -> Result<tripeaks::Game, SaveError> {
 
 fn parse_tripeaks(bytes: &[u8]) -> Result<tripeaks::Game, SaveError> {
     let replay = parse_replay::<Replay<tripeaks::Action, tripeaks::Options>>(bytes, "tripeaks")?;
+    validate_standard_tripeaks(replay.setup)?;
     tripeaks::Game::from_replay(&replay)
         .map_err(|error| SaveError::InvalidReplay(error.to_string()))
 }
@@ -1385,6 +1397,34 @@ mod tests {
     }
 
     #[test]
+    fn nonstandard_tripeaks_games_are_rejected_before_save() {
+        let path = test_path("tripeaks-nonstandard-save.json");
+        let standard = tripeaks::Game::new(31, tripeaks::Options::default());
+        save_tripeaks(&path, &standard).unwrap();
+        let original = fs::read(&path).unwrap();
+        let (_, revision) = load_tripeaks_revisioned(&path).unwrap();
+        let mut expected = Some(revision);
+        let original_expected = expected;
+        let nonstandard = tripeaks::Game::new(32, tripeaks::Options { wraparound: true });
+
+        assert!(matches!(
+            save_tripeaks(&path, &nonstandard),
+            Err(SaveError::InvalidReplay(reason))
+                if reason == "standard TriPeaks saves do not allow rank wraparound"
+        ));
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(matches!(
+            save_tripeaks_checked(&path, &nonstandard, &mut expected),
+            Err(SaveError::InvalidReplay(reason))
+                if reason == "standard TriPeaks saves do not allow rank wraparound"
+        ));
+        assert_eq!(expected, original_expected);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
     fn tripeaks_counter_overflow_preserves_counter_file() {
         let path = test_path("tripeaks-counter-overflow.json");
         let minimum = DealCounters {
@@ -1422,6 +1462,39 @@ mod tests {
         assert!(!reason.is_empty());
         assert!(!path.exists());
         assert_eq!(fs::read(&quarantined).unwrap(), corrupt);
+        fs::remove_file(quarantined).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn nonstandard_tripeaks_setup_is_rejected_and_quarantined() {
+        let path = test_path("tripeaks-wraparound.json");
+        let replay: Replay<tripeaks::Action, tripeaks::Options> = Replay {
+            version: crate::replay::CURRENT_REPLAY_VERSION,
+            game: "tripeaks".into(),
+            seed: 1,
+            setup: tripeaks::Options { wraparound: true },
+            actions: Vec::new(),
+        };
+        save_replay(&path, "tripeaks", &replay).unwrap();
+        let source = fs::read(&path).unwrap();
+        assert!(matches!(
+            load_tripeaks(&path),
+            Err(SaveError::InvalidReplay(reason))
+                if reason == "standard TriPeaks saves do not allow rank wraparound"
+        ));
+
+        let RecoveredSave::Quarantined {
+            path: quarantined,
+            reason,
+            ..
+        } = recover_tripeaks_revisioned(&path).unwrap()
+        else {
+            panic!("nonstandard TriPeaks save should be quarantined");
+        };
+        assert!(reason.contains("do not allow rank wraparound"));
+        assert!(!path.exists());
+        assert_eq!(fs::read(&quarantined).unwrap(), source);
         fs::remove_file(quarantined).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
     }
