@@ -61,14 +61,16 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     let generator = include_str!("../scripts/generate_offline_capabilities.py");
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
-    assert!(metadata.contains("actions/runs/32638817768"));
+    assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
+    assert!(metadata.contains("actions/runs/32645102863"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
-    assert!(generated.contains("actions/runs/32638817768"));
+    assert!(generated.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
+    assert!(generated.contains("actions/runs/32645102863"));
     assert!(generated.contains("(success)."));
-    assert!(generated.contains("| Complete | 0 |"));
+    assert!(generated.contains("| Complete | 1 |"));
+    assert!(generated.contains("| Partial | 10 |"));
 }
 
 #[test]
@@ -79,11 +81,12 @@ fn alpha_release_evidence_keeps_acceptance_gaps_explicit() {
         "all five games",
         "omarchy-shell shell summon",
         "omarchy restart shell",
-        "Live missing-binary and immediate-startup-failure notifications",
+        "Solitaire is not installed",
+        "Solitaire could not start",
         "Orca was not installed",
         "No five complete wins were played through the installed UI",
         "Achievements are deferred",
-        "all applicable capability rows remain Partial",
+        "one applicable capability row is Complete",
     ] {
         assert!(
             evidence.contains(contract),
@@ -127,7 +130,52 @@ fn spider_variant_acceptance_is_pinned_without_overclaim() {
             "missing focused acceptance boundary: {contract}"
         );
     }
-    assert_eq!(catalog.matches("\"status\":\"complete\"").count(), 0);
+    assert!(
+        catalog.contains(
+            "{\"id\":\"game.spider\",\"title\":\"Playable Spider\",\"status\":\"partial\""
+        )
+    );
+}
+
+#[test]
+fn launcher_failure_acceptance_is_pinned_and_scoped() {
+    let evidence = include_str!("../docs/OMARCHY_LAUNCHER_ACCEPTANCE_4B31024.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "4b31024426b73fafe93597e4cd42312eef2b26b0",
+        "54d9c6ee27c9e0839e21579aac8a918549a4dbc1",
+        "actions/runs/32645102863",
+        "7f3fc9770c4af2d44024a5a67151a1df8ba4414dd80bcf05e737ba72808e2914",
+        "fa61e0f95cc992dd783bfa701bb8787b3442d215d407132c0749e5abf3850c1e",
+        "solitaire-omarchy 0.1.0.r0.g4b31024-1",
+        "b7b2d8f7befe8ca2be10bbf92d784bde0ade18aa4bf3367fb6c0cfc0cb52bfd1",
+        "9 total files, 0 altered files",
+        "f6b0cb7e55d296bdf77714efc48a1775b858c041",
+        "omarchy-shell shell summon io.github.rohan-patnaik.solitaire '{}'",
+        "Solitaire is not installed",
+        "Install the native solitaire binary and try again.",
+        "launcher exited 127",
+        "Solitaire could not start",
+        "Solitaire failed during startup (exit 42). Run solitaire in a terminal for details.",
+        "final status 42",
+        "Bubblewrap mounted the",
+        "without editing `Plugin.qml` or any host file",
+        "verified all 29 listed",
+        "makes only `foundation.omarchy-launcher` Complete",
+        "full keyboard traversal, Orca output, drag/touch",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing launcher acceptance boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains(
+        "{\"id\":\"foundation.omarchy-launcher\",\"title\":\"Detached Omarchy launcher\",\"status\":\"complete\""
+    ));
+    assert!(catalog.contains(
+        "{\"id\":\"quality.real-omarchy\",\"title\":\"Real Omarchy and Wayland acceptance\",\"status\":\"partial\""
+    ));
+    assert!(!catalog.contains("live missing-binary/startup-failure notifications remain pending"));
 }
 
 #[test]
