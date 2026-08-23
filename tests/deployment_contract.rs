@@ -161,44 +161,7 @@ fn spider_hostile_property_coverage_is_catalogued_without_overclaim() {
     ));
 }
 
-#[test]
-fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
-    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/spider-one-suit-near-win.json");
-    let fixture = include_str!("fixtures/spider-one-suit-near-win.json");
-    let evidence = include_str!("../docs/SPIDER_COMPLETE_DEAL_ACCEPTANCE.md");
-    let catalog = include_str!("../docs/offline-capabilities.json");
-    let controller = include_str!("../src/main.rs");
-    let ui = include_str!("../ui/app.slint");
-
-    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
-    assert_eq!(envelope["version"], 1);
-    assert_eq!(envelope["game"], "spider");
-    assert_eq!(envelope["payload"]["version"], 2);
-    assert_eq!(envelope["payload"]["game"], "spider");
-    assert_eq!(envelope["payload"]["seed"], 3);
-    assert_eq!(envelope["payload"]["setup"], "One");
-    let actions = envelope["payload"]["actions"].as_array().unwrap();
-    assert_eq!(actions.len(), 118);
-    assert_eq!(
-        actions.iter().filter(|action| action.is_string()).count(),
-        5
-    );
-    assert!(envelope["payload"].get("state").is_none());
-    assert!(envelope.get("profile").is_none());
-    let checksum = std::process::Command::new("sha256sum")
-        .arg(&fixture_path)
-        .output()
-        .unwrap();
-    assert!(checksum.status.success());
-    assert_eq!(
-        String::from_utf8(checksum.stdout)
-            .unwrap()
-            .split_whitespace()
-            .next(),
-        Some("caf35da8ed4a60d55f87ad2967e80a89f804b993b40619fd85a3b0af341f394e")
-    );
-
+fn assert_spider_complete_deal_acceptance_contract(evidence: &str) {
     for contract in [
         "e45da16bbd19e0c04f7a76696d309eac7681f4db",
         "caf35da8ed4a60d55f87ad2967e80a89f804b993b40619fd85a3b0af341f394e",
@@ -253,6 +216,47 @@ fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
             "missing complete-deal boundary: {contract}"
         );
     }
+}
+
+#[test]
+fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/spider-one-suit-near-win.json");
+    let fixture = include_str!("fixtures/spider-one-suit-near-win.json");
+    let evidence = include_str!("../docs/SPIDER_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "spider");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "spider");
+    assert_eq!(envelope["payload"]["seed"], 3);
+    assert_eq!(envelope["payload"]["setup"], "One");
+    let actions = envelope["payload"]["actions"].as_array().unwrap();
+    assert_eq!(actions.len(), 118);
+    assert_eq!(
+        actions.iter().filter(|action| action.is_string()).count(),
+        5
+    );
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("caf35da8ed4a60d55f87ad2967e80a89f804b993b40619fd85a3b0af341f394e")
+    );
+    assert_spider_complete_deal_acceptance_contract(evidence);
+
     for test in [
         "legal_one_suit_replay_reaches_a_one_move_near_win",
         "controller_completes_legal_spider_replay_once_and_reopens",
