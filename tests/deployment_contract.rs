@@ -214,3 +214,53 @@ fn unsaved_changes_have_retry_and_close_warning_contracts() {
     assert!(controller.contains("on-disk entry now contains the current game"));
     assert!(controller.contains("the original path is gone"));
 }
+
+#[test]
+fn long_recovery_status_has_a_dedicated_scrollable_surface() {
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "width: 1180px",
+        "height: 820px",
+        "spacing: 12px",
+        "vertical-stretch: 0",
+        "min-height: 44px",
+        "preferred-height: 44px",
+        "max-height: 44px",
+        "min-height: 40px",
+        "preferred-height: 40px",
+        "max-height: 40px",
+        "status-surface := Rectangle",
+        "min-height: 80px",
+        "preferred-height: 80px",
+        "max-height: 80px",
+        "Status details — arrow keys scroll",
+        "Standard TriPeaks uses no rank wraparound. All play stays on this device.",
+        "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device.",
+        "status-scroll := ScrollView",
+        "width: parent.width - 28px",
+        "viewport-width: self.visible-width",
+        "viewport-height: max(self.visible-height, status-text.preferred-height + 4px)",
+        "vertical-scrollbar-policy: always-on",
+        "horizontal-scrollbar-policy: always-off",
+        "event.text == Key.PageDown",
+        "accessible-live-region: polite",
+        "accessible-label: \"Game status: \" + root.status-text",
+        "accessible-role: groupbox",
+        "accessible-label: \"Status details. Use arrow keys to scroll status messages\"",
+        "wrap: char-wrap",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing status-surface contract: {contract}"
+        );
+    }
+    assert_eq!(ui.matches("vertical-stretch: 0").count(), 3);
+
+    let recovery_action = ui
+        .find("Discard all unsaved progress and close Solitaire")
+        .expect("recovery action must remain available");
+    let status_surface = ui
+        .find("status-surface := Rectangle")
+        .expect("status surface must exist");
+    assert!(recovery_action < status_surface);
+}

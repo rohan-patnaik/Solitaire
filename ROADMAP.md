@@ -68,7 +68,7 @@ Functional parity is achievable for the five core games and common collection fe
 - Responsive animations, 60 Hz frame pacing, startup/memory budgets, battery profiling.
 - Reproducible Arch package/AppImage, signed checksums, SBOM, fuzzing of save/replay files.
 - Omarchy validation on a real Quattro machine and marketplace submission.
-- Exact-SHA five-game alpha acceptance is summarized in `docs/ALPHA_RELEASE.md`; Orca output, unclipped long errors, complete-deal UI wins, live launcher failure notifications, and marketplace submission remain open.
+- Exact-SHA five-game alpha acceptance is summarized in `docs/ALPHA_RELEASE.md`; a dedicated wrapped long-status surface is implemented but awaits exact-package acceptance, while Orca output, complete-deal UI wins, live launcher failure notifications, and marketplace submission remain open.
 
 ## Copyright and provenance gate
 

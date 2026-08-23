@@ -1,4 +1,4 @@
-import { Button, ComboBox, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { Button, ComboBox, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export struct UiCard {
     label: string,
@@ -180,10 +180,14 @@ export component AppWindow inherits Window {
 
     VerticalBox {
         padding: 22px;
-        spacing: 16px;
+        spacing: 12px;
 
         HorizontalBox {
             spacing: 10px;
+            vertical-stretch: 0;
+            min-height: 44px;
+            preferred-height: 44px;
+            max-height: 44px;
             Text {
                 text: "Solitaire";
                 color: #fff3dd;
@@ -269,6 +273,10 @@ export component AppWindow inherits Window {
 
         HorizontalBox {
             spacing: 10px;
+            vertical-stretch: 0;
+            min-height: 40px;
+            preferred-height: 40px;
+            max-height: 40px;
             Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
             Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
@@ -309,14 +317,90 @@ export component AppWindow inherits Window {
                 clicked => { root.autocomplete-requested(); }
             }
             Rectangle { horizontal-stretch: 1; }
+        }
+
+        status-surface := Rectangle {
+            vertical-stretch: 0;
+            min-height: 80px;
+            preferred-height: 80px;
+            max-height: 80px;
+            border-radius: 10px;
+            border-width: status-focus.has-focus ? 3px : 1px;
+            border-color: status-focus.has-focus ? #ffffff : #577d74;
+            background: #0d332e;
+            accessible-role: groupbox;
+            accessible-label: "Status details. Use arrow keys to scroll status messages";
+
             Text {
-                text: root.status-text;
-                accessible-live-region: polite;
-                accessible-label: "Game status: " + root.status-text;
-                color: #f4d78e;
-                font-size: 16px;
-                vertical-alignment: center;
-                horizontal-alignment: right;
+                x: 14px;
+                y: 4px;
+                height: 16px;
+                text: "Status details — arrow keys scroll · " + (root.game-kind == "Spider"
+                    ? "Move descending same-suit runs. Build by rank; complete King-to-Ace suited runs."
+                    : (root.game-kind == "FreeCell"
+                        ? "Use four free cells to build alternating cascades and ascending suit foundations."
+                        : (root.game-kind == "TriPeaks"
+                            ? "Standard TriPeaks uses no rank wraparound. All play stays on this device."
+                            : (root.game-kind == "Pyramid"
+                                ? "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device."
+                                : "Choose a face-up card or run, then choose its destination. All play stays on this device."))));
+                color: #aac5bd;
+                font-size: 11px;
+            }
+
+            status-scroll := ScrollView {
+                x: 14px;
+                y: 20px;
+                width: parent.width - 28px;
+                height: parent.height - 26px;
+                viewport-width: self.visible-width;
+                viewport-height: max(self.visible-height, status-text.preferred-height + 4px);
+                vertical-scrollbar-policy: always-on;
+                horizontal-scrollbar-policy: always-off;
+                mouse-drag-pan-enabled: true;
+
+                status-text := Text {
+                    width: status-scroll.visible-width - 18px;
+                    height: status-scroll.viewport-height;
+                    text: root.status-text;
+                    wrap: char-wrap;
+                    accessible-live-region: polite;
+                    accessible-label: "Game status: " + root.status-text;
+                    color: #f4d78e;
+                    font-size: 16px;
+                    horizontal-alignment: left;
+                    vertical-alignment: top;
+                }
+            }
+
+            status-focus := FocusScope {
+                x: 0;
+                width: 0;
+                key-pressed(event) => {
+                    if (event.text == Key.UpArrow) {
+                        status-scroll.viewport-y = min(0px, status-scroll.viewport-y + 20px);
+                        return accept;
+                    } else if (event.text == Key.DownArrow) {
+                        status-scroll.viewport-y = max(
+                            status-scroll.visible-height - status-scroll.viewport-height,
+                            status-scroll.viewport-y - 20px,
+                        );
+                        return accept;
+                    } else if (event.text == Key.PageUp) {
+                        status-scroll.viewport-y = min(
+                            0px,
+                            status-scroll.viewport-y + status-scroll.visible-height,
+                        );
+                        return accept;
+                    } else if (event.text == Key.PageDown) {
+                        status-scroll.viewport-y = max(
+                            status-scroll.visible-height - status-scroll.viewport-height,
+                            status-scroll.viewport-y - status-scroll.visible-height,
+                        );
+                        return accept;
+                    }
+                    return reject;
+                }
             }
         }
 
@@ -551,19 +635,5 @@ export component AppWindow inherits Window {
             }
         }
 
-        Text {
-            text: root.game-kind == "Spider"
-                ? "Move descending same-suit runs. Build by rank; complete King-to-Ace suited runs."
-                : (root.game-kind == "FreeCell"
-                    ? "Use four free cells to build alternating cascades and ascending suit foundations."
-                    : (root.game-kind == "TriPeaks"
-                        ? "Standard TriPeaks uses no rank wraparound. All play stays on this device."
-                        : (root.game-kind == "Pyramid"
-                            ? "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device."
-                            : "Choose a face-up card or run, then choose its destination. All play stays on this device.")));
-            color: #aac5bd;
-            font-size: 14px;
-            horizontal-alignment: center;
-        }
     }
 }

@@ -95,9 +95,11 @@ package files.
   TriPeaks modes remain incomplete or unverified.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
-- Long malformed-save and conflict messages are horizontally clipped in the
-  default window. AT-SPI exposes the complete text and recovery controls remain
-  visible.
+- Long malformed-save and conflict messages now use a dedicated full-width,
+  character-wrapped, vertically scrollable display-only live region at the default
+  1180x820 window size, while recovery controls remain in their existing
+  keyboard order. Exact-package Wayland visual and AT-SPI acceptance of this
+  new surface remains pending.
 - Achievements are deferred. There is no achievement taxonomy, named profile,
   streak system, import/export, sync, or multi-process merge.
 - Cross-file transactions, crash injection, power-loss recovery, gamepad
