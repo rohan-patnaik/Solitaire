@@ -646,6 +646,89 @@ mod tests {
     }
 
     #[test]
+    fn legal_one_suit_replay_reaches_a_one_move_near_win() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/spider-one-suit-near-win.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["version"], 1);
+        assert_eq!(fixture["game"], "spider");
+        let replay: Replay<Action, SuitMode> =
+            serde_json::from_value(fixture["payload"].clone()).unwrap();
+        assert_eq!(replay.version, CURRENT_REPLAY_VERSION);
+        assert_eq!(replay.game, "spider");
+        assert_eq!(replay.seed, 3);
+        assert_eq!(replay.setup, SuitMode::One);
+        assert_eq!(replay.actions.len(), 118);
+
+        let mut game = Game::from_replay(&replay).unwrap();
+        assert_eq!(game.state.completed_runs, 7);
+        assert_eq!(game.state.card_count(), 104);
+        assert_eq!(game.state.score, 1_082);
+        assert_eq!(game.state.moves, 118);
+        assert!(game.state.stock.is_empty());
+        assert_eq!(
+            game.state.columns[0]
+                .iter()
+                .map(|card| card.card.rank)
+                .collect::<Vec<_>>(),
+            [
+                Rank::Ten,
+                Rank::Nine,
+                Rank::Eight,
+                Rank::Seven,
+                Rank::Six,
+                Rank::Five,
+                Rank::Four,
+                Rank::Three,
+                Rank::Two,
+                Rank::Ace,
+            ]
+        );
+        assert_eq!(
+            game.state.columns[2]
+                .iter()
+                .map(|card| card.card.rank)
+                .collect::<Vec<_>>(),
+            [Rank::King, Rank::Queen, Rank::Jack]
+        );
+        assert!(
+            game.state
+                .columns
+                .iter()
+                .flatten()
+                .all(|card| card.face_up && card.card.suit == Suit::Spades)
+        );
+        assert!(!game.state.is_won());
+
+        let near_win = game.clone();
+        let final_action = Action::Move {
+            from: 0,
+            to: 2,
+            count: 10,
+        };
+        game.apply(final_action.clone()).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.state.completed_runs, 8);
+        assert_eq!(game.state.card_count(), 104);
+        assert_eq!(game.state.score, 1_181);
+        assert_eq!(game.state.moves, 119);
+        assert!(game.state.stock.is_empty());
+        assert!(game.state.columns.iter().all(Vec::is_empty));
+
+        let won = game.clone();
+        let won_replay = game.replay();
+        assert_eq!(won_replay.actions.len(), 119);
+        assert_eq!(won_replay.actions.last(), Some(&final_action));
+        assert_eq!(Game::from_replay(&won_replay).unwrap(), won);
+        assert!(game.undo());
+        assert_eq!(game.state, near_win.state);
+        assert_eq!(game.replay(), near_win.replay());
+        assert!(game.redo());
+        assert_eq!(game, won);
+    }
+
+    #[test]
     fn variants_have_104_cards_with_expected_suits() {
         for (mode, expected) in [
             (SuitMode::One, vec![(Suit::Spades, 104)]),

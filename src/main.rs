@@ -2285,6 +2285,7 @@ fn to_u8(value: usize) -> u8 {
 mod tests {
     use super::*;
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
 
     fn test_save(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -2469,6 +2470,113 @@ mod tests {
         controller.redo();
         assert_eq!(controller.spider.state, moved);
         remove_save(&path);
+    }
+
+    #[test]
+    fn controller_completes_legal_spider_replay_once_and_reopens() {
+        let game_path = test_save("spider-near-win");
+        let profile_path = test_save("spider-near-win-profile");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/spider-one-suit-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let (near_win, revision) = load_spider_revisioned(&game_path).unwrap();
+
+        let mut controller = controller(3);
+        controller.active = GameKind::Spider;
+        controller.spider = near_win;
+        controller.spider_save_path = Some(game_path.clone());
+        controller.save_revisions[1] = Some(revision);
+        controller.local_profile_path = Some(profile_path.clone());
+        assert!(!profile_path.exists());
+        assert_eq!(
+            controller.local_profile.statistics(ProfileGameKind::Spider),
+            solitaire::profile::GameStatistics::default()
+        );
+
+        controller.activate_spider_tableau(0, 0);
+        assert!(
+            controller
+                .spider_selection
+                .is_some_and(|selection| { selection.column == 0 && selection.count == 10 })
+        );
+        controller.activate_spider_tableau(2, 0);
+
+        assert_eq!(
+            controller.status,
+            "Spider complete — all eight runs are home"
+        );
+        assert!(controller.spider.state.is_won());
+        assert_eq!(controller.spider.state.completed_runs, 8);
+        assert_eq!(controller.spider.state.card_count(), 104);
+        assert_eq!(controller.spider.state.score, 1_181);
+        assert_eq!(controller.spider.state.moves, 119);
+        assert_eq!(
+            controller.local_profile.statistics(ProfileGameKind::Spider),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(3),
+                latest_won_deal: Some(3),
+            }
+        );
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&profile_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let won = controller.spider.clone();
+        let won_save = fs::read(&game_path).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&won_save).unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "spider");
+        assert_eq!(envelope["payload"]["version"], 2);
+        assert_eq!(envelope["payload"]["setup"], "One");
+        assert_eq!(
+            envelope["payload"]["actions"].as_array().unwrap().len(),
+            119
+        );
+        assert_eq!(load_spider_revisioned(&game_path).unwrap().0, won);
+
+        let profile_bytes = fs::read(&profile_path).unwrap();
+        controller.undo();
+        assert_eq!(controller.status, "Move undone");
+        assert_eq!(controller.spider.state.completed_runs, 7);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.redo();
+        assert_eq!(controller.status, "Move restored");
+        assert_eq!(controller.spider, won);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.observe_active_profile();
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        let (reopened_game, _) = load_spider_revisioned(&game_path).unwrap();
+        let (reopened_profile, _) = load_local_profile_revisioned(&profile_path).unwrap();
+        assert_eq!(reopened_game, won);
+        assert_eq!(
+            reopened_profile.statistics(ProfileGameKind::Spider),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(3),
+                latest_won_deal: Some(3),
+            }
+        );
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        assert_eq!(fs::read(&game_path).unwrap(), won_save);
+        assert_eq!(load_spider_revisioned(&game_path).unwrap().0, won);
+
+        remove_save(&game_path);
+        remove_save(&profile_path);
     }
 
     #[test]

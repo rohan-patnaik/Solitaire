@@ -153,12 +153,125 @@ fn spider_hostile_property_coverage_is_catalogued_without_overclaim() {
             "{\"id\":\"game.spider\",\"title\":\"Playable Spider\",\"status\":\"partial\""
         )
     );
-    assert!(
-        catalog.contains("An installed complete-deal win and drag/touch behavior remain open.")
-    );
+    assert!(catalog.contains(
+        "The exact installed final-transition and normal Controller startup/reopen gate and drag/touch behavior remain open."
+    ));
     assert!(roadmap.contains(
         "Spider's dependency-free hostile-action and fixed seed/mode action-space tests"
     ));
+}
+
+#[test]
+fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/spider-one-suit-near-win.json");
+    let fixture = include_str!("fixtures/spider-one-suit-near-win.json");
+    let evidence = include_str!("../docs/SPIDER_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "spider");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "spider");
+    assert_eq!(envelope["payload"]["seed"], 3);
+    assert_eq!(envelope["payload"]["setup"], "One");
+    let actions = envelope["payload"]["actions"].as_array().unwrap();
+    assert_eq!(actions.len(), 118);
+    assert_eq!(
+        actions.iter().filter(|action| action.is_string()).count(),
+        5
+    );
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("caf35da8ed4a60d55f87ad2967e80a89f804b993b40619fd85a3b0af341f394e")
+    );
+
+    for contract in [
+        "e45da16bbd19e0c04f7a76696d309eac7681f4db",
+        "caf35da8ed4a60d55f87ad2967e80a89f804b993b40619fd85a3b0af341f394e",
+        "4,340 bytes",
+        "113 moves and",
+        "Move { from: 0, to: 2, count: 10 }",
+        "score 1,082, move 118",
+        "1,181, move 119",
+        "Score  1082     Moves  118     Runs  7/8",
+        "Score  1181     Moves  119     Runs  8/8",
+        "Pointer clicks and AT-SPI default-action invocation are not substitutes for this keyboard-only gate.",
+        "Column 0 is exactly Ten, Nine, Eight, Seven, Six",
+        "Five, Four, Three, Two, Ace; column 2 is exactly King, Queen, Jack.",
+        "production persistence loaders",
+        "does not exercise installed `Controller`",
+        "`HEAD == origin/main ==` the recorded full",
+        "terminal success is recorded",
+        "exact-head",
+        "Rust and exact-revision Arch package CI jobs",
+        "package version, source archive SHA-256, package archive",
+        "SHA-256, full installed source marker and its SHA-256",
+        "and installed binary",
+        "exact candidate package on the normal host with an isolated",
+        "`XDG_DATA_HOME`",
+        "pacman -Q solitaire-omarchy",
+        "pacman -Qkk solitaire-omarchy",
+        "9 total files, 0 altered files",
+        "Require exactly one Solitaire process and one native Wayland window",
+        "client size 1180x820 and `xwayland=false`",
+        "Resolve `/proc/$PID/exe` to",
+        "`/usr/bin/solitaire` and require its SHA-256 to equal the recorded installed",
+        "binary hash.",
+        "original-resolution 1180x820 screenshots",
+        "transition, with hashes",
+        "new normal `Controller` startup",
+        "normal user Solitaire data",
+        "require no Solitaire process or window",
+        "restore the original",
+        "AT-SPI enabled state",
+        "checksum the complete evidence bundle",
+        "not a record of a passed package run",
+        "seed `local-profile.json`",
+        "0 played · 0 won",
+        "1 played · 1 won",
+        "Spider complete — all eight runs are home",
+        "Game status: Spider complete — all eight runs are home",
+        "bytes and SHA-256 must not change",
+        "drag/drop, touch input",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing complete-deal boundary: {contract}"
+        );
+    }
+    for test in [
+        "legal_one_suit_replay_reaches_a_one_move_near_win",
+        "controller_completes_legal_spider_replay_once_and_reopens",
+        "spider_complete_deal_candidate_is_pinned_without_overclaim",
+    ] {
+        assert!(catalog.contains(test), "missing Spider evidence: {test}");
+    }
+    assert!(
+        catalog.contains(
+            "{\"id\":\"game.spider\",\"title\":\"Playable Spider\",\"status\":\"partial\""
+        )
+    );
+    assert!(catalog.contains(
+        "The exact installed final-transition and normal Controller startup/reopen gate and drag/touch behavior remain open."
+    ));
+    assert!(controller.contains("Spider complete — all eight runs are home"));
+    assert!(ui.contains("callback spider-tableau-activated(int, int)"));
+    assert!(ui.contains("accessible-action-default => { root.activated(); }"));
+    assert!(ui.contains("accessible-live-region: polite"));
 }
 
 #[test]
