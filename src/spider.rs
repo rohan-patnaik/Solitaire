@@ -403,6 +403,248 @@ mod tests {
         }
     }
 
+    fn assert_state_invariants(game: &Game) {
+        assert_eq!(game.state.card_count(), 104);
+        assert!(game.state.completed_runs <= 8);
+        for column in &game.state.columns {
+            if let Some(top) = column.last() {
+                assert!(top.face_up);
+            }
+            let mut reached_face_up_suffix = false;
+            for card in column {
+                if card.face_up {
+                    reached_face_up_suffix = true;
+                } else {
+                    assert!(!reached_face_up_suffix);
+                }
+            }
+        }
+    }
+
+    fn candidate_actions(game: &Game) -> Vec<Action> {
+        let mut actions = vec![Action::DealRow];
+        for (from, column) in game.state.columns.iter().enumerate() {
+            for to in 0..COLUMN_COUNT {
+                for count in 0..=column.len() + 1 {
+                    actions.push(Action::Move {
+                        from: to_u8(from),
+                        to: to_u8(to),
+                        count: to_u8(count),
+                    });
+                }
+            }
+        }
+        actions
+    }
+
+    type HostileCase = (&'static str, Game, Action, MoveError);
+
+    const fn move_action(from: u8, to: u8, count: u8) -> Action {
+        Action::Move { from, to, count }
+    }
+
+    fn hostile_action_cases() -> Vec<HostileCase> {
+        let base = Game::new(17, SuitMode::Four);
+        let oversized_count = to_u8(base.state.columns[0].len() + 1);
+        let mut face_down = base.clone();
+        face_down.state.columns[0].last_mut().unwrap().face_up = false;
+        let mut broken_run = base.clone();
+        let broken_length = broken_run.state.columns[0].len();
+        broken_run.state.columns[0][broken_length - 2] = up(Suit::Spades, Rank::Eight);
+        broken_run.state.columns[0][broken_length - 1] = up(Suit::Hearts, Rank::Seven);
+        let mut bad_destination = base.clone();
+        *bad_destination.state.columns[0].last_mut().unwrap() = up(Suit::Spades, Rank::Seven);
+        *bad_destination.state.columns[1].last_mut().unwrap() = up(Suit::Hearts, Rank::Nine);
+        let mut empty_stock = base.clone();
+        empty_stock.state.stock.clear();
+        let mut empty_column = base.clone();
+        empty_column.state.columns[0].clear();
+
+        vec![
+            (
+                "zero count",
+                base.clone(),
+                move_action(0, 1, 0),
+                MoveError::InvalidMove,
+            ),
+            (
+                "self move",
+                base.clone(),
+                move_action(0, 0, 1),
+                MoveError::InvalidMove,
+            ),
+            (
+                "source out of bounds",
+                base.clone(),
+                move_action(10, 0, 1),
+                MoveError::InvalidColumn,
+            ),
+            (
+                "destination out of bounds",
+                base.clone(),
+                move_action(0, 10, 1),
+                MoveError::InvalidColumn,
+            ),
+            (
+                "oversized run",
+                base.clone(),
+                move_action(0, 1, oversized_count),
+                MoveError::InvalidMove,
+            ),
+            (
+                "face-down card",
+                face_down,
+                move_action(0, 1, 1),
+                MoveError::BrokenRun,
+            ),
+            (
+                "broken suited run",
+                broken_run,
+                move_action(0, 1, 2),
+                MoveError::BrokenRun,
+            ),
+            (
+                "bad destination",
+                bad_destination,
+                move_action(0, 1, 1),
+                MoveError::InvalidDestination,
+            ),
+            (
+                "empty stock",
+                empty_stock,
+                Action::DealRow,
+                MoveError::EmptyStock,
+            ),
+            (
+                "empty column during deal",
+                empty_column,
+                Action::DealRow,
+                MoveError::EmptyColumnDuringDeal,
+            ),
+        ]
+    }
+
+    #[test]
+    fn hostile_actions_are_exact_and_fully_atomic() {
+        for (name, mut game, action, expected) in hostile_action_cases() {
+            let before = game.clone();
+            let before_bytes = serde_json::to_vec(&before).unwrap();
+            assert_eq!(game.apply(action), Err(expected), "{name}");
+            assert_eq!(game, before, "{name}");
+            assert_eq!(serde_json::to_vec(&game).unwrap(), before_bytes, "{name}");
+        }
+    }
+
+    #[test]
+    fn fixed_seed_mode_action_space_preserves_spider_invariants() {
+        for mode in [SuitMode::One, SuitMode::Two, SuitMode::Four] {
+            let mut legal_deals = 0;
+            let mut legal_moves = 0;
+            let mut rejected_actions = 0;
+
+            for seed in [1, 41] {
+                let mut game = Game::new(seed, mode);
+                assert_state_invariants(&game);
+
+                for step in 0..5 {
+                    let mut next_deal = None;
+                    let mut next_move = None;
+                    for action in candidate_actions(&game) {
+                        let before = game.clone();
+                        let mut probe = before.clone();
+                        if probe.apply(action.clone()).is_ok() {
+                            assert_state_invariants(&probe);
+                            assert_eq!(Game::from_replay(&probe.replay()).unwrap(), probe);
+
+                            let after = probe.clone();
+                            assert!(probe.undo());
+                            assert_eq!(probe.state, before.state);
+                            assert_eq!(probe.replay(), before.replay());
+                            assert!(probe.can_redo());
+                            assert!(probe.redo());
+                            assert_eq!(probe, after);
+
+                            match action {
+                                Action::DealRow => {
+                                    legal_deals += 1;
+                                    next_deal.get_or_insert(after);
+                                }
+                                Action::Move { .. } => {
+                                    legal_moves += 1;
+                                    next_move.get_or_insert(after);
+                                }
+                            }
+                        } else {
+                            rejected_actions += 1;
+                            assert_eq!(probe, before);
+                        }
+                    }
+
+                    game = if step % 2 == 0 {
+                        next_deal.or(next_move)
+                    } else {
+                        next_move.or(next_deal)
+                    }
+                    .expect("every swept state should have a legal continuation");
+                }
+            }
+
+            assert!(legal_deals > 0, "{mode:?}");
+            assert!(legal_moves > 0, "{mode:?}");
+            assert!(rejected_actions > 0, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn synthetic_final_run_wins_but_is_not_a_full_deal_replay() {
+        let mut game = Game::new(73, SuitMode::One);
+        game.state.columns = Default::default();
+        game.state.stock.clear();
+        game.state.columns[0] = Rank::ALL
+            .into_iter()
+            .rev()
+            .filter(|rank| *rank != Rank::Ace)
+            .map(|rank| up(Suit::Spades, rank))
+            .collect();
+        game.state.columns[1] = vec![up(Suit::Spades, Rank::Ace)];
+        game.state.completed_runs = 7;
+        game.state.score = 1_200;
+        game.state.moves = 41;
+        assert_state_invariants(&game);
+
+        let before = game.clone();
+        let final_action = Action::Move {
+            from: 1,
+            to: 0,
+            count: 1,
+        };
+        game.apply(final_action.clone()).unwrap();
+
+        assert!(game.state.is_won());
+        assert_eq!(game.state.completed_runs, 8);
+        assert_eq!(game.state.score, 1_299);
+        assert_eq!(game.state.moves, 42);
+        assert_eq!(game.state.card_count(), 104);
+        assert!(game.state.stock.is_empty());
+        assert!(game.state.columns.iter().all(Vec::is_empty));
+
+        let won = game.clone();
+        assert!(game.undo());
+        assert_eq!(game.state, before.state);
+        assert!(!game.state.is_won());
+        assert!(game.redo());
+        assert_eq!(game, won);
+
+        // This synthetic seven-run prefix was injected directly. Its one-action replay
+        // intentionally cannot reconstruct a complete deal from the seeded boundary.
+        let replay = game.replay();
+        assert_eq!(replay.actions, vec![final_action]);
+        assert_ne!(
+            Game::from_replay(&replay).map(|candidate| candidate.state),
+            Ok(won.state)
+        );
+    }
+
     #[test]
     fn variants_have_104_cards_with_expected_suits() {
         for (mode, expected) in [

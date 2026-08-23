@@ -138,6 +138,30 @@ fn spider_variant_acceptance_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn spider_hostile_property_coverage_is_catalogued_without_overclaim() {
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let roadmap = include_str!("../ROADMAP.md");
+    for test in [
+        "hostile_actions_are_exact_and_fully_atomic",
+        "fixed_seed_mode_action_space_preserves_spider_invariants",
+        "synthetic_final_run_wins_but_is_not_a_full_deal_replay",
+    ] {
+        assert!(catalog.contains(test), "missing Spider coverage: {test}");
+    }
+    assert!(
+        catalog.contains(
+            "{\"id\":\"game.spider\",\"title\":\"Playable Spider\",\"status\":\"partial\""
+        )
+    );
+    assert!(
+        catalog.contains("An installed complete-deal win and drag/touch behavior remain open.")
+    );
+    assert!(roadmap.contains(
+        "Spider's dependency-free hostile-action and fixed seed/mode action-space tests"
+    ));
+}
+
+#[test]
 fn launcher_failure_acceptance_is_pinned_and_scoped() {
     let evidence = include_str!("../docs/OMARCHY_LAUNCHER_ACCEPTANCE_4B31024.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
