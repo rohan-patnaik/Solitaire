@@ -58,6 +58,16 @@ omarchy plugin add https://github.com/rohan-patnaik/Solitaire.git --enable --yes
 omarchy-shell shell summon io.github.rohan-patnaik.solitaire '{}'
 ```
 
+Remove the launcher and native package with:
+
+```sh
+omarchy plugin remove io.github.rohan-patnaik.solitaire
+sudo pacman -Rns solitaire-omarchy
+```
+
+The root `preview.png` is the original monochrome marketplace mark for this
+plugin listing.
+
 ## License
 
 MIT.
