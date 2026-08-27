@@ -49,6 +49,10 @@ The active game's local statistics count a deal as played on its first successfu
 - Enter any decimal `u64` deal number and press Enter or choose **Open deal**
   to reproduce that repository-defined FreeCell layout. **Next deal** uses the
   independent durable sequence and explicit openings do not consume it.
+- A checked-in normal seed-zero FreeCell replay reconstructs to one foundation
+  move before victory and exercises the final free-cell/foundation route,
+  status, atomic save/reopen, undo/redo, and one-time local played/won
+  accounting. Exact-package final-action acceptance remains open.
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
 - Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Installed AT-SPI acceptance covers the five game surfaces and all three Spider suit modes; full keyboard-only traversal and spoken screen-reader output remain pending.
 - In standard Pyramid, activate an exposed king to remove it, or activate two exposed tableau/waste cards whose ranks total 13. The original seven-row layout exposes the exact deal number, stock, waste, score, move count, redeals, hints, and win status. Covered-card identities stay hidden visually and from accessible names.

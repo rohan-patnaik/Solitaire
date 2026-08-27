@@ -480,6 +480,56 @@ mod tests {
     }
 
     #[test]
+    fn legal_seed_zero_replay_reaches_a_one_move_near_win() {
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/freecell-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "freecell");
+        let replay: Replay<Action> = serde_json::from_value(envelope["payload"].clone()).unwrap();
+        assert_eq!(replay.version, CURRENT_REPLAY_VERSION);
+        assert_eq!(replay.game, "freecell");
+        assert_eq!(replay.seed, 0);
+        assert_eq!(replay.actions.len(), 105);
+
+        let mut game = Game::from_replay(&replay).unwrap();
+        assert_eq!(game.state.deal_number, 0);
+        assert_eq!(game.state.card_count(), 52);
+        assert_eq!(game.state.moves, 105);
+        assert!(game.state.cascades.iter().all(Vec::is_empty));
+        assert_eq!(game.state.free_cells[1].unwrap().suit, Suit::Spades);
+        assert_eq!(game.state.free_cells[1].unwrap().rank, Rank::King);
+        assert_eq!(game.state.free_cells.iter().flatten().count(), 1);
+        assert_eq!(game.state.foundations[0].len(), 13);
+        assert_eq!(game.state.foundations[1].len(), 13);
+        assert_eq!(game.state.foundations[2].len(), 13);
+        assert_eq!(game.state.foundations[3].len(), 12);
+        assert!(!game.state.is_won());
+
+        let near_win = game.clone();
+        let final_action = Action {
+            from: Pile::FreeCell(1),
+            to: Pile::Foundation(Suit::Spades),
+            count: 1,
+        };
+        game.apply(final_action).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.state.card_count(), 52);
+        assert_eq!(game.state.moves, 106);
+        assert_eq!(game.replay().actions.len(), 106);
+        assert_eq!(game.replay().actions.last(), Some(&final_action));
+
+        let won = game.clone();
+        assert_eq!(Game::from_replay(&game.replay()).unwrap(), won);
+        assert!(game.undo());
+        assert_eq!(game.state, near_win.state);
+        assert_eq!(game.replay(), near_win.replay());
+        assert!(game.redo());
+        assert_eq!(game, won);
+    }
+
+    #[test]
     fn hint_can_recommend_a_multi_card_supermove() {
         let mut game = empty_game();
         game.state.free_cells = [

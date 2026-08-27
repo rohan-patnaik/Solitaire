@@ -2737,6 +2737,111 @@ mod tests {
     }
 
     #[test]
+    fn controller_completes_legal_freecell_replay_once_and_reopens() {
+        let game_path = test_save("freecell-near-win");
+        let profile_path = test_save("freecell-near-win-profile");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/freecell-seed-zero-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let (near_win, revision) = load_freecell_revisioned(&game_path).unwrap();
+
+        let mut controller = controller(0);
+        controller.active = GameKind::FreeCell;
+        controller.freecell = near_win;
+        controller.freecell_save_path = Some(game_path.clone());
+        controller.save_revisions[2] = Some(revision);
+        controller.local_profile_path = Some(profile_path.clone());
+        assert!(!profile_path.exists());
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::FreeCell),
+            solitaire::profile::GameStatistics::default()
+        );
+
+        controller.activate_freecell_cell(1);
+        assert!(
+            controller
+                .freecell_selection
+                .is_some_and(|selection| selection.pile == freecell::Pile::FreeCell(1))
+        );
+        controller.activate_freecell_foundation(3);
+
+        assert_eq!(controller.status, "FreeCell complete — every suit is home");
+        assert!(controller.freecell.state.is_won());
+        assert_eq!(controller.freecell.state.card_count(), 52);
+        assert_eq!(controller.freecell.state.moves, 106);
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::FreeCell),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&profile_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let won = controller.freecell.clone();
+        let won_save = fs::read(&game_path).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&won_save).unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "freecell");
+        assert_eq!(envelope["payload"]["version"], 2);
+        assert_eq!(envelope["payload"]["seed"], 0);
+        assert_eq!(
+            envelope["payload"]["actions"].as_array().unwrap().len(),
+            106
+        );
+        assert_eq!(load_freecell_revisioned(&game_path).unwrap().0, won);
+
+        let profile_bytes = fs::read(&profile_path).unwrap();
+        controller.undo();
+        assert_eq!(controller.status, "Move undone");
+        assert!(!controller.freecell.state.is_won());
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.redo();
+        assert_eq!(controller.status, "Move restored");
+        assert_eq!(controller.freecell, won);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.observe_active_profile();
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        let (reopened_game, _) = load_freecell_revisioned(&game_path).unwrap();
+        let (reopened_profile, _) = load_local_profile_revisioned(&profile_path).unwrap();
+        assert_eq!(reopened_game, won);
+        assert_eq!(
+            reopened_profile.statistics(ProfileGameKind::FreeCell),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        assert_eq!(fs::read(&game_path).unwrap(), won_save);
+
+        remove_save(&game_path);
+        remove_save(&profile_path);
+    }
+
+    #[test]
     fn tripeaks_surface_routes_standard_play_history_and_reopen() {
         let path = test_save("tripeaks-surface");
         remove_save(&path);

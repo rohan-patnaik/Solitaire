@@ -94,6 +94,14 @@ The desktop-safe source-render boundary and remaining installed input gate are
 recorded in
 [`FREECELL_NUMBERED_DEAL_ACCEPTANCE.md`](FREECELL_NUMBERED_DEAL_ACCEPTANCE.md).
 
+FreeCell deal zero also has a checked-in normal 105-action replay with only the
+King of Spades remaining in free cell 2. Production replay reconstruction and
+the controller's keyboard-routable final foundation move prove the complete
+status, 0600 game/profile persistence, exact one-time played/won observation,
+undo/redo idempotence, and loader-level reopen. This is candidate evidence;
+exact installed final-action acceptance remains open. See
+[`FREECELL_COMPLETE_DEAL_ACCEPTANCE.md`](FREECELL_COMPLETE_DEAL_ACCEPTANCE.md).
+
 The native Klondike new-deal surface now offers draw-one or draw-three with
 Standard or Vegas scoring. Vegas starts at -52 and awards five points for each
 foundation card. A focused controller test covers the exact option choice and
@@ -153,8 +161,8 @@ package files.
 
 ## Known alpha limits
 
-- No five complete wins were played through the installed UI. Normal TriPeaks
-  and Pyramid complete-deal transcripts now prove their final
+- No five complete wins were played through the installed UI. Normal FreeCell,
+  TriPeaks, and Pyramid complete-deal transcripts now prove their final
   controller lifecycles, but the installed transitions and other game win
   transitions,
   full rule variants, broader hostile/property tests, drag/touch behavior,

@@ -62,13 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("860413721e62d8967a938a04562491919b219ab5"));
-    assert!(metadata.contains("actions/runs/33118432350"));
+    assert!(metadata.contains("d1f82f8eb90c29ce25c80963083634dd6e1a105e"));
+    assert!(metadata.contains("actions/runs/33121031503"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("860413721e62d8967a938a04562491919b219ab5"));
-    assert!(generated.contains("actions/runs/33118432350"));
+    assert!(generated.contains("d1f82f8eb90c29ce25c80963083634dd6e1a105e"));
+    assert!(generated.contains("actions/runs/33121031503"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -211,6 +211,91 @@ fn tripeaks_complete_deal_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_8604137.md"));
     assert!(catalog.contains("0.1.0.r0.g8604137-1"));
+}
+
+#[test]
+fn pyramid_complete_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_D1F82F8.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "d1f82f8eb90c29ce25c80963083634dd6e1a105e",
+        "860413721e62d8967a938a04562491919b219ab5",
+        "6fb553cced72ce63f1cfd4ff3b28e638d88b4d89",
+        "actions/runs/33121031503",
+        "job/98687625682",
+        "job/98687625950",
+        "solitaire-omarchy 0.1.0.r0.gd1f82f8-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire process was",
+        "installed keyboard/AT-SPI final-transition gate remains open",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing d1f82f8 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_D1F82F8.md"));
+    assert!(catalog.contains("0.1.0.r0.gd1f82f8-1"));
+}
+
+#[test]
+fn freecell_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/freecell-seed-zero-near-win.json");
+    let fixture = include_str!("fixtures/freecell-seed-zero-near-win.json");
+    let evidence = include_str!("../docs/FREECELL_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "freecell");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "freecell");
+    assert_eq!(envelope["payload"]["seed"], 0);
+    assert!(envelope["payload"]["setup"].is_null());
+    assert_eq!(
+        envelope["payload"]["actions"].as_array().unwrap().len(),
+        105
+    );
+    assert!(envelope.get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope["payload"].get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("3824f1f98ec7e5f0a0c4038198765f02428606f0f1e7133649a146d8d2afdc82")
+    );
+
+    for contract in [
+        "tests/fixtures/freecell-seed-zero-near-win.json",
+        "3824f1f98ec7e5f0a0c4038198765f02428606f0f1e7133649a146d8d2afdc82",
+        "105 recorded actions",
+        "King of Spades in free cell 2",
+        "action 106 and wins",
+        "controller_completes_legal_freecell_replay_once_and_reopens",
+        "FreeCell complete — every suit is home",
+        "exactly one played and one won",
+        "continuously preserves the active desktop",
+        "rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing FreeCell complete-deal boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("tests/fixtures/freecell-seed-zero-near-win.json"));
+    assert!(catalog.contains("docs/FREECELL_COMPLETE_DEAL_ACCEPTANCE.md"));
+    assert!(catalog.contains("exact installed final foundation move"));
 }
 
 #[test]
