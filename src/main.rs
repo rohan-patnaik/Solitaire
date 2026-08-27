@@ -2848,6 +2848,104 @@ mod tests {
     }
 
     #[test]
+    fn controller_completes_legal_tripeaks_replay_once_and_reopens() {
+        let game_path = test_save("tripeaks-near-win");
+        let profile_path = test_save("tripeaks-near-win-profile");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/tripeaks-seed-zero-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+        let (near_win, revision) = load_tripeaks_revisioned(&game_path).unwrap();
+
+        let mut controller = controller(0);
+        controller.active = GameKind::TriPeaks;
+        controller.tripeaks = near_win;
+        controller.tripeaks_save_path = Some(game_path.clone());
+        controller.save_revisions[3] = Some(revision);
+        controller.local_profile_path = Some(profile_path.clone());
+        assert!(!profile_path.exists());
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::TriPeaks),
+            solitaire::profile::GameStatistics::default()
+        );
+
+        controller.activate_tripeaks_card(0);
+
+        assert_eq!(
+            controller.status,
+            "TriPeaks complete — all three peaks are clear"
+        );
+        assert!(controller.tripeaks.state.is_won());
+        assert_eq!(controller.tripeaks.state.card_count(), 52);
+        assert_eq!(controller.tripeaks.state.score, 5_800);
+        assert_eq!(controller.tripeaks.state.moves, 49);
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::TriPeaks),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&profile_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let won = controller.tripeaks.clone();
+        let won_save = fs::read(&game_path).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&won_save).unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "tripeaks");
+        assert_eq!(envelope["payload"]["version"], 2);
+        assert_eq!(envelope["payload"]["setup"]["wraparound"], false);
+        assert_eq!(envelope["payload"]["actions"].as_array().unwrap().len(), 49);
+        assert_eq!(load_tripeaks_revisioned(&game_path).unwrap().0, won);
+
+        let profile_bytes = fs::read(&profile_path).unwrap();
+        controller.undo();
+        assert_eq!(controller.status, "Move undone");
+        assert!(!controller.tripeaks.state.is_won());
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.redo();
+        assert_eq!(controller.status, "Move restored");
+        assert_eq!(controller.tripeaks, won);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.observe_active_profile();
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        let (reopened_game, _) = load_tripeaks_revisioned(&game_path).unwrap();
+        let (reopened_profile, _) = load_local_profile_revisioned(&profile_path).unwrap();
+        assert_eq!(reopened_game, won);
+        assert_eq!(
+            reopened_profile.statistics(ProfileGameKind::TriPeaks),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+
+        remove_save(&game_path);
+        remove_save(&profile_path);
+    }
+
+    #[test]
     fn pyramid_surface_routes_standard_play_history_and_reopen() {
         let path = test_save("pyramid-surface");
         remove_save(&path);

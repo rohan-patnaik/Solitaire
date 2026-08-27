@@ -62,13 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("c22c1737d04cfd7cb8fa09b8c65caebec2206eec"));
-    assert!(metadata.contains("actions/runs/33112983537"));
+    assert!(metadata.contains("d9d0498d8854fb9268b6105c2a767710a63e40e6"));
+    assert!(metadata.contains("actions/runs/33116183706"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("c22c1737d04cfd7cb8fa09b8c65caebec2206eec"));
-    assert!(generated.contains("actions/runs/33112983537"));
+    assert!(generated.contains("d9d0498d8854fb9268b6105c2a767710a63e40e6"));
+    assert!(generated.contains("actions/runs/33116183706"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -145,7 +145,7 @@ fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
         "solitaire-omarchy 0.1.0.r0.gc22c173-1",
         "enabled:false",
         "active:false",
-        "No plugin layer or Solitaire process was",
+        "No plugin layer or Solitaire",
         "c29c1cfc0c7e4a2664450524c146e1c346c4c216bd1080bcd6257787326a229b",
         "b5f0a0916ac9a6627ae81eb36b9ce65e926fa70c5e87faf0e28f3e677f5e6eac",
         "used the exact source-built release binary, not the",
@@ -158,6 +158,33 @@ fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_C22C173.md"));
     assert!(catalog.contains("The Vegas UI workflow still needs exact-package Wayland acceptance"));
+}
+
+#[test]
+fn freecell_numbered_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_D9D0498.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "d9d0498d8854fb9268b6105c2a767710a63e40e6",
+        "c22c1737d04cfd7cb8fa09b8c65caebec2206eec",
+        "3637242543b9791bc5e81114dc38ddde11db9e51",
+        "actions/runs/33116183706",
+        "job/98671301926",
+        "job/98671302227",
+        "solitaire-omarchy 0.1.0.r0.gd9d0498-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire",
+        "acceptance therefore remain open",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing d9d0498 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_D9D0498.md"));
+    assert!(catalog.contains("0.1.0.r0.gd9d0498-1"));
 }
 
 #[test]
@@ -339,6 +366,71 @@ fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
     ));
     assert!(controller.contains("Spider complete — all eight runs are home"));
     assert!(ui.contains("callback spider-tableau-activated(int, int)"));
+    assert!(ui.contains("accessible-action-default => { root.activated(); }"));
+    assert!(ui.contains("accessible-live-region: polite"));
+}
+
+#[test]
+fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/tripeaks-seed-zero-near-win.json");
+    let fixture = include_str!("fixtures/tripeaks-seed-zero-near-win.json");
+    let evidence = include_str!("../docs/TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "tripeaks");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "tripeaks");
+    assert_eq!(envelope["payload"]["seed"], 0);
+    assert_eq!(envelope["payload"]["setup"]["wraparound"], false);
+    assert_eq!(envelope["payload"]["actions"].as_array().unwrap().len(), 48);
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("c7063d5b9a9c99c1c2034c7f17a8c4a5322807b9242de3f5bdb73d2e832e3f9c")
+    );
+    for contract in [
+        "one keyboard-routable move",
+        "Production `Game::from_replay` reconstructs 52 conserved cards",
+        "TriPeaks complete — all three peaks are clear",
+        "controller_completes_legal_tripeaks_replay_once_and_reopens",
+        "exactly one played and one won observation",
+        "Remaining installed gate",
+        "position 1, the sole remaining top card",
+        "engine/callback index `0`",
+        "accessibility, real-platform, and profile rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing TriPeaks complete-deal boundary: {contract}"
+        );
+    }
+    for test in [
+        "legal_seed_zero_replay_reaches_a_one_move_near_win",
+        "controller_completes_legal_tripeaks_replay_once_and_reopens",
+        "tripeaks_complete_deal_candidate_is_pinned_without_overclaim",
+    ] {
+        assert!(catalog.contains(test), "missing TriPeaks evidence: {test}");
+    }
+    assert!(catalog.contains(
+        "{\"id\":\"game.tripeaks\",\"title\":\"Playable TriPeaks\",\"status\":\"partial\""
+    ));
+    assert!(catalog.contains("The exact installed final transition"));
+    assert!(controller.contains("TriPeaks complete — all three peaks are clear"));
+    assert!(ui.contains("callback tripeaks-tableau-activated(int)"));
     assert!(ui.contains("accessible-action-default => { root.activated(); }"));
     assert!(ui.contains("accessible-live-region: polite"));
 }

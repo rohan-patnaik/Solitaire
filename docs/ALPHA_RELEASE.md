@@ -64,6 +64,15 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+TriPeaks deal zero now has a checked-in normal replay with 48 legal actions and
+one exposed tableau card remaining. Production replay reconstruction and the
+controller's keyboard-routable final action prove the complete status, score,
+0600 game/profile persistence, exact one-time played/won observation,
+undo/redo idempotence, and loader-level reopen. This is candidate evidence;
+the exact installed final transition remains open under the desktop-safe input
+boundary. See
+[`TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md`](TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md).
+
 FreeCell now accepts an explicit decimal deal number across the full `u64`
 range as well as a separate next-deal action. Focused controller coverage
 rejects empty, signed, spaced, non-ASCII, overflowing, and oversized input
@@ -136,7 +145,9 @@ package files.
 
 ## Known alpha limits
 
-- No five complete wins were played through the installed UI. Win transitions,
+- No five complete wins were played through the installed UI. A normal
+  TriPeaks complete-deal transcript now proves its final controller lifecycle,
+  but the installed transition and the other game win transitions,
   full rule variants, broader hostile/property tests, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and optional
   TriPeaks modes remain incomplete or unverified.

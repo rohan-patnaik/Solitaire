@@ -425,6 +425,38 @@ mod tests {
     }
 
     #[test]
+    fn legal_seed_zero_replay_reaches_a_one_move_near_win() {
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/tripeaks-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "tripeaks");
+        let replay: Replay<Action, Options> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let mut game = Game::from_replay(&replay).unwrap();
+
+        assert_eq!(game.state.seed, 0);
+        assert_eq!(game.state.options, Options::default());
+        assert_eq!(game.state.tableau.iter().flatten().count(), 1);
+        assert!(game.state.tableau[0].is_some());
+        assert!(game.state.is_exposed(0));
+        assert_eq!(game.state.stock.len(), 2);
+        assert_eq!(game.state.waste.len(), 49);
+        assert_eq!(game.state.score, 5_700);
+        assert_eq!(game.state.moves, 48);
+        assert_eq!(game.state.card_count(), 52);
+        assert!(!game.state.is_won());
+
+        game.apply(Action::Remove(0)).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.state.score, 5_800);
+        assert_eq!(game.state.moves, 49);
+        assert_eq!(game.state.card_count(), 52);
+        assert_eq!(game.replay().actions.len(), 49);
+    }
+
+    #[test]
     fn malformed_and_oversized_replays_are_rejected() {
         let mut wrong_game = Game::new(1, Options::default()).replay();
         wrong_game.game = "spider".into();
