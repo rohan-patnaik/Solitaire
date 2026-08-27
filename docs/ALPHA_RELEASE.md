@@ -64,6 +64,19 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+FreeCell now accepts an explicit decimal deal number across the full `u64`
+range as well as a separate next-deal action. Focused controller coverage
+rejects empty, signed, spaced, non-ASCII, overflowing, and oversized input
+before state or persistence changes; exact openings survive dirty-state
+confirmation and atomic save/reopen without consuming the durable next-deal
+sequence. The visible text field declares keyboard acceptance and an accessible
+name, but this workflow still needs exact-package Wayland acceptance. Deal
+numbers reproduce this repository's deterministic shuffle and do not claim
+interoperability with another product's numbering algorithm.
+The desktop-safe source-render boundary and remaining installed input gate are
+recorded in
+[`FREECELL_NUMBERED_DEAL_ACCEPTANCE.md`](FREECELL_NUMBERED_DEAL_ACCEPTANCE.md).
+
 The native Klondike new-deal surface now offers draw-one or draw-three with
 Standard or Vegas scoring. Vegas starts at -52 and awards five points for each
 foundation card. A focused controller test covers the exact option choice and

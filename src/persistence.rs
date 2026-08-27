@@ -174,6 +174,41 @@ pub fn load_deal_counters(path: &Path) -> Result<DealCounters, SaveError> {
     parse_deal_counters(&bytes)
 }
 
+/// Ensures the durable per-game counter file exists without reserving a deal.
+///
+/// Existing values are never lowered, so concurrent or previously persisted
+/// reservations remain authoritative.
+///
+/// # Errors
+/// Returns a typed error for bounded locking, malformed storage, or atomic write failure.
+pub fn ensure_deal_counters(path: &Path, minimum: DealCounters) -> Result<DealCounters, SaveError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "save path has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let _lock = SaveLock::acquire(path)?;
+    let mut counters = match read_bounded(path) {
+        Ok(bytes) => parse_deal_counters(&bytes)?,
+        Err(SaveError::Io(error)) if error.kind() == io::ErrorKind::NotFound => minimum,
+        Err(error) => return Err(error),
+    };
+    counters.klondike = counters.klondike.max(minimum.klondike);
+    counters.spider = counters.spider.max(minimum.spider);
+    counters.freecell = counters.freecell.max(minimum.freecell);
+    counters.tripeaks = counters.tripeaks.max(minimum.tripeaks);
+    counters.pyramid = counters.pyramid.max(minimum.pyramid);
+    let envelope = SaveEnvelope {
+        version: CURRENT_SAVE_VERSION,
+        game: "deal-counters".into(),
+        payload: counters,
+    };
+    finish_namespace_write(
+        atomic_write_locked(path, &bounded_json(&envelope)?)?,
+        "initializing deal counters",
+    )?;
+    Ok(counters)
+}
+
 fn parse_deal_counters(bytes: &[u8]) -> Result<DealCounters, SaveError> {
     validate_json_depth(bytes)?;
     let envelope: SaveEnvelope<DealCounters> = serde_json::from_slice(bytes)?;
@@ -1170,6 +1205,33 @@ mod tests {
         assert_eq!(restored.freecell.checked_add(1), Some(6));
         assert_eq!(restored.tripeaks.checked_add(1), Some(78));
         assert_eq!(restored.pyramid.checked_add(1), Some(304));
+        fs::remove_file(&path).unwrap();
+        fs::remove_file(path.with_extension("json.lock")).unwrap();
+    }
+
+    #[test]
+    fn ensuring_deal_counters_never_reserves_or_lowers_existing_values() {
+        let path = test_path("ensure-deal-counters.json");
+        let minimum = DealCounters {
+            klondike: 41,
+            spider: 900,
+            freecell: 5,
+            tripeaks: 77,
+            pyramid: 303,
+        };
+        assert_eq!(ensure_deal_counters(&path, minimum).unwrap(), minimum);
+
+        let advanced = DealCounters {
+            klondike: 44,
+            spider: 901,
+            freecell: 12,
+            tripeaks: 80,
+            pyramid: 400,
+        };
+        save_deal_counters(&path, advanced).unwrap();
+        assert_eq!(ensure_deal_counters(&path, minimum).unwrap(), advanced);
+        assert_eq!(load_deal_counters(&path).unwrap(), advanced);
+
         fs::remove_file(&path).unwrap();
         fs::remove_file(path.with_extension("json.lock")).unwrap();
     }

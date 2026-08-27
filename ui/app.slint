@@ -1,4 +1,4 @@
-import { Button, ComboBox, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
+import { Button, ComboBox, HorizontalBox, LineEdit, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export struct UiCard {
     label: string,
@@ -148,9 +148,11 @@ export component AppWindow inherits Window {
     in property <bool> has-pending-save-conflict;
     in-out property <string> klondike-draw-mode: "Draw 1";
     in-out property <string> klondike-scoring-mode: "Standard";
+    in-out property <string> freecell-deal-number-entry: "";
 
     callback select-game(string);
     callback new-game(string);
+    callback new-freecell-deal(string);
     callback draw-stock;
     callback waste-activated;
     callback tableau-activated(int, int);
@@ -220,7 +222,7 @@ export component AppWindow inherits Window {
                 text: root.game-kind == "Spider"
                     ? "Score  " + root.score + "     Moves  " + root.moves + "     Runs  " + root.completed-runs + "/8"
                     : (root.game-kind == "FreeCell"
-                        ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-id
+                        ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-number
                         : (root.game-kind == "TriPeaks"
                             ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number
                             : (root.game-kind == "Pyramid"
@@ -242,11 +244,6 @@ export component AppWindow inherits Window {
                     accessible-label: "Start a new Spider deal";
                     clicked => { root.new-game(spider-mode.current-value); }
                 }
-            }
-            if root.game-kind == "FreeCell": Button {
-                text: "New deal";
-                accessible-label: "Start the next numbered FreeCell deal";
-                clicked => { root.new-game("Next numbered deal"); }
             }
             if root.game-kind == "TriPeaks": Button {
                 text: "New deal";
@@ -340,6 +337,40 @@ export component AppWindow inherits Window {
                 }
             }
             Rectangle { horizontal-stretch: 1; }
+        }
+
+        if root.game-kind == "FreeCell": HorizontalBox {
+            spacing: 10px;
+            vertical-stretch: 0;
+            min-height: 40px;
+            preferred-height: 40px;
+            max-height: 40px;
+            Text {
+                text: "Choose FreeCell deal";
+                color: #dce9e3;
+                vertical-alignment: center;
+            }
+            freecell-deal-number := LineEdit {
+                horizontal-stretch: 1;
+                text <=> root.freecell-deal-number-entry;
+                placeholder-text: "Decimal deal number";
+                input-type: InputType.number;
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "FreeCell deal number";
+                accepted(value) => { root.new-freecell-deal(value); }
+            }
+            Button {
+                text: "Open deal";
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Open the entered FreeCell deal number";
+                clicked => { root.new-freecell-deal(root.freecell-deal-number-entry); }
+            }
+            Button {
+                text: "Next deal";
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Start the next numbered FreeCell deal";
+                clicked => { root.new-game("Next numbered deal"); }
+            }
         }
 
         status-surface := Rectangle {

@@ -13,7 +13,7 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 ## Status
 
-This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell, Pyramid, and TriPeaks expose deterministic numbered deals. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
+This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell can open an explicit repository-defined decimal deal number or advance to the next one, while Pyramid and TriPeaks expose sequential deterministic deals. These numbers reproduce this repository's generator and are not a claim of compatibility with another product's deal numbering. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
 See the [alpha install, demonstrated workflows, privacy boundary, and known limits](docs/ALPHA_RELEASE.md). Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md).
 
@@ -46,6 +46,9 @@ The active game's local statistics count a deal as played on its first successfu
 - Choose a game from the picker and select the Spider suit count before starting a new deal.
 - In Spider, select a face-up card or same-suit run, then choose another column. Use the stock control to deal a row; every column must be occupied.
 - In FreeCell, select a card or alternating run, then choose a cascade, free cell, or suit foundation. Movable run size is derived from the available free cells and empty cascades.
+- Enter any decimal `u64` deal number and press Enter or choose **Open deal**
+  to reproduce that repository-defined FreeCell layout. **Next deal** uses the
+  independent durable sequence and explicit openings do not consume it.
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
 - Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Installed AT-SPI acceptance covers the five game surfaces and all three Spider suit modes; full keyboard-only traversal and spoken screen-reader output remain pending.
 - In standard Pyramid, activate an exposed king to remove it, or activate two exposed tableau/waste cards whose ranks total 13. The original seven-row layout exposes the exact deal number, stock, waste, score, move count, redeals, hints, and win status. Covered-card identities stay hidden visually and from accessible names.

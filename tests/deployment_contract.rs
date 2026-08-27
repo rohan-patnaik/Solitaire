@@ -62,12 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("actions/runs/32645102863"));
+    assert!(metadata.contains("c22c1737d04cfd7cb8fa09b8c65caebec2206eec"));
+    assert!(metadata.contains("actions/runs/33112983537"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(generated.contains("actions/runs/32645102863"));
+    assert!(generated.contains("c22c1737d04cfd7cb8fa09b8c65caebec2206eec"));
+    assert!(generated.contains("actions/runs/33112983537"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -129,6 +130,34 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
         .find("status-surface := Rectangle")
         .expect("status surface must exist");
     assert!(recovery_row < options_row && options_row < status_surface);
+}
+
+#[test]
+fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_C22C173.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "c22c1737d04cfd7cb8fa09b8c65caebec2206eec",
+        "bc8b1e621104d23b9fb3fc2a646cfda74882edf5",
+        "actions/runs/33112983537",
+        "job/98660344058",
+        "job/98660344289",
+        "solitaire-omarchy 0.1.0.r0.gc22c173-1",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire process was",
+        "c29c1cfc0c7e4a2664450524c146e1c346c4c216bd1080bcd6257787326a229b",
+        "b5f0a0916ac9a6627ae81eb36b9ce65e926fa70c5e87faf0e28f3e677f5e6eac",
+        "used the exact source-built release binary, not the",
+        "Exact-package Vegas selection",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing c22c173 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_C22C173.md"));
+    assert!(catalog.contains("The Vegas UI workflow still needs exact-package Wayland acceptance"));
 }
 
 #[test]
@@ -386,6 +415,69 @@ fn spider_and_freecell_surfaces_are_accessible_and_interactive() {
 }
 
 #[test]
+fn freecell_numbered_deal_entry_declares_keyboard_and_accessibility_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let evidence = include_str!("../docs/FREECELL_NUMBERED_DEAL_ACCEPTANCE.md");
+    for contract in [
+        "callback new-freecell-deal(string)",
+        "text: \"Choose FreeCell deal\"",
+        "placeholder-text: \"Decimal deal number\"",
+        "input-type: InputType.number",
+        "accessible-label: \"FreeCell deal number\"",
+        "accepted(value) => { root.new-freecell-deal(value); }",
+        "accessible-label: \"Open the entered FreeCell deal number\"",
+        "accessible-label: \"Start the next numbered FreeCell deal\"",
+        "enabled: !root.has-pending-new-deal",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing numbered-deal UI contract: {contract}"
+        );
+    }
+    for contract in [
+        "fn parse_freecell_deal_number",
+        "MAX_U64_DECIMAL_DIGITS",
+        "state.new_freecell_game(deal_number.as_str())",
+        "FreeCellDeal::Exact(deal_number)",
+        "app.set_deal_number(freecell_deal_number(state.deal_number))",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing numbered-deal controller contract: {contract}"
+        );
+    }
+    assert!(catalog.contains(
+        "exact_freecell_deal_is_strict_atomic_reopenable_and_does_not_consume_next_deal"
+    ));
+    assert!(ui.contains("Deal  \" + root.deal-number"));
+    for contract in [
+        "c90dd474c0d3cbbabe03fe105031d1713e316041f2e58db37bc191cb7d682e8b",
+        "9d358022af547259a531ba5083b4fe1e1fd8300abfbec1c46f4512ce882ac9b4",
+        "beac885a1d0fca2d911e2411f1e2450da5a4d39fa649a36aac8bc7366ce2f2fb",
+        "did not expose the virtual-keyboard protocol",
+        "skipped rather than sending input to the user's active desktop",
+        "Remaining exact-package gate",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing numbered-deal acceptance boundary: {contract}"
+        );
+    }
+    let recovery_row = ui
+        .find("Discard all unsaved progress and close Solitaire")
+        .expect("recovery controls must exist");
+    let numbered_deal_row = ui
+        .find("text: \"Choose FreeCell deal\"")
+        .expect("dedicated FreeCell deal row must exist");
+    let status_surface = ui
+        .find("status-surface := Rectangle")
+        .expect("status surface must exist");
+    assert!(recovery_row < numbered_deal_row && numbered_deal_row < status_surface);
+}
+
+#[test]
 fn tripeaks_surface_declares_keyboard_and_accessibility_contracts() {
     let ui = include_str!("../ui/app.slint");
     let controller = include_str!("../src/main.rs");
@@ -518,7 +610,7 @@ fn long_recovery_status_has_a_dedicated_scrollable_surface() {
             "missing status-surface contract: {contract}"
         );
     }
-    assert_eq!(ui.matches("vertical-stretch: 0").count(), 4);
+    assert_eq!(ui.matches("vertical-stretch: 0").count(), 5);
 
     let recovery_action = ui
         .find("Discard all unsaved progress and close Solitaire")

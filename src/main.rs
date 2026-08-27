@@ -6,7 +6,7 @@ use solitaire::persistence::{
     DealCounters, DealKind, RecoveredSave, SaveError, SaveRevision, confirm_current_save_revision,
     default_deal_counters_path, default_freecell_save_path, default_local_profile_path,
     default_pyramid_save_path, default_save_path, default_spider_save_path,
-    default_tripeaks_save_path, load_deal_counters, load_freecell_revisioned,
+    default_tripeaks_save_path, ensure_deal_counters, load_deal_counters, load_freecell_revisioned,
     load_klondike_revisioned, load_local_profile_revisioned, load_pyramid_revisioned,
     load_spider_revisioned, load_tripeaks_revisioned, recover_freecell_revisioned,
     recover_klondike_revisioned, recover_local_profile_revisioned, recover_pyramid_revisioned,
@@ -48,7 +48,14 @@ enum NewDealVariant {
         scoring: Scoring,
     },
     Spider(SuitMode),
+    FreeCell(FreeCellDeal),
     Standard,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FreeCellDeal {
+    Next,
+    Exact(u64),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -345,10 +352,28 @@ impl Controller {
             self.status = "Invalid new-deal options; current game preserved".into();
             return;
         };
-        let request = PendingNewDeal {
+        self.stage_new_deal(PendingNewDeal {
             game: self.active,
             variant,
+        });
+    }
+
+    fn new_freecell_game(&mut self, deal_number: &str) {
+        if self.active != GameKind::FreeCell {
+            self.status = "Numbered deal entry is available only in FreeCell".into();
+            return;
+        }
+        let Some(deal_number) = parse_freecell_deal_number(deal_number) else {
+            self.status = "Enter a decimal FreeCell deal number from 0 through 18446744073709551615; current game preserved".into();
+            return;
         };
+        self.stage_new_deal(PendingNewDeal {
+            game: GameKind::FreeCell,
+            variant: NewDealVariant::FreeCell(FreeCellDeal::Exact(deal_number)),
+        });
+    }
+
+    fn stage_new_deal(&mut self, request: PendingNewDeal) {
         self.pending_new_deal = Some(request);
         self.pending_new_deal_conflict = false;
         if self.dirty[self.active_index()] || self.local_profile_dirty {
@@ -372,8 +397,11 @@ impl Controller {
             self.status = "Invalid pending new-deal options; current game preserved".into();
             return;
         }
-        let Some(seed) = self.take_next_seed(request.game) else {
-            self.status = "No further deal number is representable; existing game preserved".into();
+        let Some(seed) = self.seed_for_new_deal(request) else {
+            if !self.status.starts_with("Could not ") {
+                self.status =
+                    "No further deal number is representable; existing game preserved".into();
+            }
             self.pending_new_deal = Some(request);
             return;
         };
@@ -479,6 +507,26 @@ impl Controller {
             GameKind::Pyramid => self.next_seeds.pyramid = next,
         }
         Some(seed)
+    }
+
+    fn seed_for_new_deal(&mut self, request: PendingNewDeal) -> Option<u64> {
+        match request.variant {
+            NewDealVariant::FreeCell(FreeCellDeal::Exact(deal_number)) => {
+                if let Some(path) = self.deal_counters_path.as_deref() {
+                    match ensure_deal_counters(path, self.next_seeds) {
+                        Ok(counters) => self.next_seeds = counters,
+                        Err(error) => {
+                            self.status = format!(
+                                "Could not preserve the independent next-deal sequence: {error}"
+                            );
+                            return None;
+                        }
+                    }
+                }
+                Some(deal_number)
+            }
+            _ => self.take_next_seed(request.game),
+        }
     }
 
     fn save(&mut self) -> bool {
@@ -1153,10 +1201,23 @@ fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVarian
         (GameKind::Spider, "1 suit") => Some(NewDealVariant::Spider(SuitMode::One)),
         (GameKind::Spider, "2 suits") => Some(NewDealVariant::Spider(SuitMode::Two)),
         (GameKind::Spider, "4 suits") => Some(NewDealVariant::Spider(SuitMode::Four)),
-        (GameKind::FreeCell, "Next numbered deal")
-        | (GameKind::TriPeaks | GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
+        (GameKind::FreeCell, "Next numbered deal") => {
+            Some(NewDealVariant::FreeCell(FreeCellDeal::Next))
+        }
+        (GameKind::TriPeaks | GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
         _ => None,
     }
+}
+
+fn parse_freecell_deal_number(input: &str) -> Option<u64> {
+    const MAX_U64_DECIMAL_DIGITS: usize = 20;
+    if input.is_empty()
+        || input.len() > MAX_U64_DECIMAL_DIGITS
+        || !input.as_bytes().iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    input.parse().ok()
 }
 
 const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bool {
@@ -1164,8 +1225,9 @@ const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bo
         (game, variant),
         (GameKind::Klondike, NewDealVariant::Klondike { .. })
             | (GameKind::Spider, NewDealVariant::Spider(_))
+            | (GameKind::FreeCell, NewDealVariant::FreeCell(_))
             | (
-                GameKind::FreeCell | GameKind::TriPeaks | GameKind::Pyramid,
+                GameKind::TriPeaks | GameKind::Pyramid,
                 NewDealVariant::Standard
             )
     )
@@ -1187,7 +1249,7 @@ fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
         (GameKind::Spider, NewDealVariant::Spider(mode)) => {
             ProspectiveGame::Spider(SpiderGame::new(seed, mode))
         }
-        (GameKind::FreeCell, NewDealVariant::Standard) => {
+        (GameKind::FreeCell, NewDealVariant::FreeCell(_)) => {
             ProspectiveGame::FreeCell(FreeCellGame::new(seed))
         }
         (GameKind::TriPeaks, NewDealVariant::Standard) => {
@@ -1266,9 +1328,13 @@ fn load_initial_deal_counters(
     defaults: DealCounters,
     status: &mut String,
 ) -> DealCounters {
+    let mut loaded = false;
     let mut counters = path
         .and_then(|path| match load_deal_counters(path) {
-            Ok(counters) => Some(counters),
+            Ok(counters) => {
+                loaded = true;
+                Some(counters)
+            }
             Err(SaveError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
                 *status = format!(
@@ -1278,14 +1344,20 @@ fn load_initial_deal_counters(
             }
         })
         .unwrap_or(defaults);
-    raise_deal_counters(&mut counters, defaults);
+    raise_deal_counters(&mut counters, defaults, loaded);
     counters
 }
 
-fn raise_deal_counters(counters: &mut DealCounters, minimum: DealCounters) {
+fn raise_deal_counters(
+    counters: &mut DealCounters,
+    minimum: DealCounters,
+    preserve_loaded_freecell: bool,
+) {
     counters.klondike = counters.klondike.max(minimum.klondike);
     counters.spider = counters.spider.max(minimum.spider);
-    counters.freecell = counters.freecell.max(minimum.freecell);
+    if !preserve_loaded_freecell {
+        counters.freecell = counters.freecell.max(minimum.freecell);
+    }
     counters.tripeaks = counters.tripeaks.max(minimum.tripeaks);
     counters.pyramid = counters.pyramid.max(minimum.pyramid);
 }
@@ -1491,6 +1563,15 @@ fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller
         let controller = Rc::clone(&controller);
         app.on_new_game(move |mode| {
             update(&weak, &controller, |state| state.new_game(mode.as_str()));
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        app.on_new_freecell_deal(move |deal_number| {
+            update(&weak, &controller, |state| {
+                state.new_freecell_game(deal_number.as_str());
+            });
         });
     }
     {
@@ -1811,8 +1892,8 @@ fn render_freecell(app: &AppWindow, controller: &Controller) {
     app.set_moves(i32::try_from(state.moves).unwrap_or(i32::MAX));
     app.set_completed_runs(0);
     app.set_longest_column(longest_column(&state.cascades));
-    app.set_deal_id(i32::try_from(state.deal_number).unwrap_or(i32::MAX));
-    app.set_deal_number(SharedString::default());
+    app.set_deal_id(0);
+    app.set_deal_number(freecell_deal_number(state.deal_number));
     app.set_redeals(0);
     app.set_redeals_remaining(0);
 }
@@ -2002,6 +2083,10 @@ fn pyramid_ui_card(card: Card, exposed: bool, selected: bool, position: usize) -
 }
 
 fn tripeaks_deal_number(seed: u64) -> SharedString {
+    seed.to_string().into()
+}
+
+fn freecell_deal_number(seed: u64) -> SharedString {
     seed.to_string().into()
 }
 
@@ -2342,6 +2427,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
 
     fn test_save(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -2964,6 +3050,209 @@ mod tests {
             assert_eq!(reopened, controller.game);
             remove_save(&path);
         }
+    }
+
+    #[test]
+    fn exact_freecell_deal_is_strict_atomic_reopenable_and_does_not_consume_next_deal() {
+        let game_path = test_save("freecell-exact-number");
+        let counter_path = test_save("freecell-exact-counter");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+        let mut controller = controller(212);
+        controller.select_game("FreeCell");
+        controller.freecell_save_path = Some(game_path.clone());
+        controller.deal_counters_path = Some(counter_path.clone());
+        assert!(controller.save());
+        let original_game = controller.freecell.clone();
+        let original_save = fs::read(&game_path).unwrap();
+        let original_counters = controller.next_seeds;
+        let oversized = "9".repeat(4_096);
+
+        for invalid in [
+            "",
+            " ",
+            "+1",
+            "-1",
+            "1.0",
+            "1 2",
+            "١",
+            "18446744073709551616",
+            oversized.as_str(),
+        ] {
+            controller.new_freecell_game(invalid);
+            assert_eq!(controller.freecell, original_game, "{invalid:?}");
+            assert_eq!(controller.next_seeds, original_counters, "{invalid:?}");
+            assert_eq!(fs::read(&game_path).unwrap(), original_save, "{invalid:?}");
+            assert!(!counter_path.exists(), "{invalid:?}");
+            assert!(controller.pending_new_deal.is_none(), "{invalid:?}");
+            assert_eq!(
+                controller.status,
+                "Enter a decimal FreeCell deal number from 0 through 18446744073709551615; current game preserved"
+            );
+        }
+
+        controller.new_freecell_game("0");
+        assert_eq!(controller.freecell.state.deal_number, 0);
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(
+            load_deal_counters(&counter_path).unwrap(),
+            original_counters
+        );
+        assert_eq!(
+            load_freecell_revisioned(&game_path).unwrap().0,
+            controller.freecell
+        );
+
+        controller.new_freecell_game("18446744073709551615");
+        assert_eq!(controller.freecell.state.deal_number, u64::MAX);
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(
+            load_deal_counters(&counter_path).unwrap(),
+            original_counters
+        );
+        assert_eq!(
+            load_freecell_revisioned(&game_path).unwrap().0,
+            controller.freecell
+        );
+
+        controller.dirty[controller.active_index()] = true;
+        controller.new_freecell_game("42");
+        let pending = controller.pending_new_deal;
+        assert!(
+            pending
+                == Some(PendingNewDeal {
+                    game: GameKind::FreeCell,
+                    variant: NewDealVariant::FreeCell(FreeCellDeal::Exact(42)),
+                })
+        );
+        controller.new_freecell_game(" 42");
+        assert!(controller.pending_new_deal == pending);
+        assert_eq!(controller.freecell.state.deal_number, u64::MAX);
+        controller.discard_progress_and_start_pending();
+        assert_eq!(controller.freecell.state.deal_number, 42);
+        assert!(controller.pending_new_deal.is_none());
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(
+            load_deal_counters(&counter_path).unwrap(),
+            original_counters
+        );
+        assert_eq!(
+            load_freecell_revisioned(&game_path).unwrap().0,
+            controller.freecell
+        );
+
+        controller.new_game("Next numbered deal");
+        assert_eq!(
+            controller.freecell.state.deal_number,
+            original_counters.freecell
+        );
+        assert_eq!(
+            controller.next_seeds.freecell,
+            original_counters.freecell + 1
+        );
+        assert!(counter_path.exists());
+
+        remove_save(&game_path);
+        remove_save(&counter_path);
+    }
+
+    #[test]
+    fn exact_freecell_deal_restart_preserves_the_durable_next_sequence() {
+        const CHILD_ROOT: &str = "SOLITAIRE_EXACT_FREECELL_RESTART_ROOT";
+        if std::env::var_os(CHILD_ROOT).is_some() {
+            let mut restarted = Controller::new();
+            restarted.select_game("FreeCell");
+            assert_eq!(restarted.freecell.state.deal_number, u64::MAX);
+            assert_eq!(restarted.next_seeds.freecell, 213);
+            restarted.new_game("Next numbered deal");
+            assert_eq!(restarted.freecell.state.deal_number, 213);
+            assert_eq!(restarted.next_seeds.freecell, 214);
+            return;
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "solitaire-controller-{}-freecell-restart",
+            std::process::id()
+        ));
+        let data = root.join("solitaire");
+        let game_path = data.join("freecell-save.json");
+        let counter_path = data.join("deal-counters.json");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+
+        let mut initial = controller(212);
+        initial.select_game("FreeCell");
+        initial.freecell_save_path = Some(game_path.clone());
+        initial.deal_counters_path = Some(counter_path.clone());
+        initial.new_freecell_game("18446744073709551615");
+        assert_eq!(initial.freecell.state.deal_number, u64::MAX);
+        assert_eq!(load_deal_counters(&counter_path).unwrap().freecell, 213);
+
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "tests::exact_freecell_deal_restart_preserves_the_durable_next_sequence",
+                "--exact",
+                "--nocapture",
+            ])
+            .env("XDG_DATA_HOME", &root)
+            .env(CHILD_ROOT, &root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child stdout: {}\nchild stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            load_freecell_revisioned(&game_path)
+                .unwrap()
+                .0
+                .state
+                .deal_number,
+            213
+        );
+        assert_eq!(load_deal_counters(&counter_path).unwrap().freecell, 214);
+
+        for name in [
+            "klondike-save.json",
+            "spider-save.json",
+            "freecell-save.json",
+            "tripeaks-save.json",
+            "pyramid-save.json",
+            "deal-counters.json",
+            "local-profile.json",
+        ] {
+            remove_save(&data.join(name));
+        }
+        let _ = fs::remove_dir(&data);
+        let _ = fs::remove_dir(&root);
+    }
+
+    #[test]
+    fn freecell_deal_entry_is_scoped_to_freecell() {
+        let mut controller = controller(213);
+        let original = controller.game.clone();
+        let counters = controller.next_seeds;
+
+        controller.new_freecell_game("42");
+
+        assert_eq!(controller.game, original);
+        assert_eq!(controller.next_seeds, counters);
+        assert!(controller.pending_new_deal.is_none());
+        assert_eq!(
+            controller.status,
+            "Numbered deal entry is available only in FreeCell"
+        );
+    }
+
+    #[test]
+    fn freecell_deal_number_preserves_full_u64_range() {
+        assert_eq!(freecell_deal_number(0).as_str(), "0");
+        assert_eq!(
+            freecell_deal_number(u64::MAX).as_str(),
+            u64::MAX.to_string()
+        );
     }
 
     #[test]
