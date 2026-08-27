@@ -864,6 +864,67 @@ mod tests {
     }
 
     #[test]
+    fn legal_seed_zero_replay_reaches_a_one_move_near_win() {
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "klondike");
+        let replay: Replay<Action, ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        assert_eq!(replay.version, crate::replay::CURRENT_REPLAY_VERSION);
+        assert_eq!(replay.game, "klondike");
+        assert_eq!(replay.seed, 0);
+        assert_eq!(replay.setup.options, Options::default());
+        assert_eq!(replay.setup.elapsed_seconds, 0);
+        assert_eq!(replay.actions.len(), 155);
+
+        let mut game = Game::from_replay(&replay).unwrap();
+        assert_eq!(game.state.seed, 0);
+        assert_eq!(game.state.options, Options::default());
+        assert_eq!(game.state.card_count(), 52);
+        assert_eq!(game.state.moves, 155);
+        assert_eq!(game.state.redeals, 3);
+        assert_eq!(game.state.score, 355);
+        assert!(game.state.stock.is_empty());
+        assert!(game.state.waste.is_empty());
+        assert_eq!(game.state.tableau.iter().map(Vec::len).sum::<usize>(), 1);
+        assert_eq!(
+            game.state.tableau[0][0].card,
+            card(Suit::Diamonds, Rank::King)
+        );
+        assert!(game.state.tableau[0][0].face_up);
+        assert_eq!(game.state.foundations[0].len(), 13);
+        assert_eq!(game.state.foundations[1].len(), 12);
+        assert_eq!(game.state.foundations[2].len(), 13);
+        assert_eq!(game.state.foundations[3].len(), 13);
+        assert!(!game.state.is_won());
+
+        let near_win = game.clone();
+        let final_action = Action::Move {
+            from: Pile::Tableau(0),
+            to: Pile::Foundation(Suit::Diamonds),
+            count: 1,
+        };
+        game.apply(final_action.clone()).unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.state.card_count(), 52);
+        assert_eq!(game.state.moves, 156);
+        assert_eq!(game.state.score, 365);
+        assert_eq!(game.replay().actions.len(), 156);
+        assert_eq!(game.replay().actions.last(), Some(&final_action));
+
+        let won = game.clone();
+        assert_eq!(Game::from_replay(&game.replay()).unwrap(), won);
+        assert!(game.undo());
+        assert_eq!(game.state, near_win.state);
+        assert_eq!(game.replay(), near_win.replay());
+        assert!(game.redo());
+        assert_eq!(game, won);
+    }
+
+    #[test]
     fn autocomplete_does_not_strand_opposite_color_tableau_builders() {
         let mut game = empty_game(Options::default());
         game.state.foundations[suit_index(Suit::Hearts)] =

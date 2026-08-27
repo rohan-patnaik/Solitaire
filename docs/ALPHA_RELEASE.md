@@ -109,6 +109,15 @@ atomic save/reopen, but this UI workflow has not yet passed the exact-package
 Wayland gate. Both scoring modes remain untimed and allow unlimited stock
 passes.
 
+Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
+replay with only the exposed King of Diamonds remaining in tableau column 1.
+Production replay reconstruction and the controller's keyboard-routable final
+foundation move prove the complete status, score, 0600 game/profile
+persistence, exact one-time played/won observation, undo/redo idempotence, and
+loader-level reopen. This is candidate evidence; exact installed final-action
+acceptance remains open. See
+[`KLONDIKE_COMPLETE_DEAL_ACCEPTANCE.md`](KLONDIKE_COMPLETE_DEAL_ACCEPTANCE.md).
+
 At published revision `4b31024426b73fafe93597e4cd42312eef2b26b0`
 (tree `54d9c6ee27c9e0839e21579aac8a918549a4dbc1`), the exact plugin's normal,
 missing-binary, and immediate-startup-failure paths passed live Omarchy/Wayland
@@ -161,10 +170,10 @@ package files.
 
 ## Known alpha limits
 
-- No five complete wins were played through the installed UI. Normal FreeCell,
-  TriPeaks, and Pyramid complete-deal transcripts now prove their final
-  controller lifecycles, but the installed transitions and other game win
-  transitions,
+- No five complete wins were played through the installed UI. Normal
+  Klondike, FreeCell, TriPeaks, and Pyramid complete-deal transcripts plus the
+  normal one-suit Spider transcript now prove all five final controller
+  lifecycles, but the installed win transitions,
   full rule variants, broader hostile/property tests, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and optional
   TriPeaks modes remain incomplete or unverified.

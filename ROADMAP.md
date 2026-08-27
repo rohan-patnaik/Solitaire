@@ -22,8 +22,10 @@ Functional parity is achievable for the five core games and common collection fe
 - M0 foundation is implemented and covered by CI, exact-revision Arch packaging checks, provenance records, and launcher contract tests. The detached Omarchy launcher's normal, missing-binary, immediate-startup-failure, and shell-restart workflows have exact live evidence and are Complete; packaging and persistence safety retain their separate Partial gaps.
 - Klondike has a playable vertical slice. Its new-deal controls expose draw-one,
   draw-three, Standard, and Vegas scoring; both scoring modes currently remain
-  untimed with unlimited stock passes. The remaining M1 product workflows below
-  are not yet complete.
+  untimed with unlimited stock passes. A normal seed-zero default replay reaches
+  a one-move near-win and its controller final transition persists the win/profile
+  exactly once across undo, redo, and reopen. The exact-package final transition
+  and remaining M1 product workflows below are not yet complete.
 - Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. FreeCell can open any strict decimal `u64` deal number without consuming its durable next-deal sequence; these repository-defined numbers do not claim interoperability with another product's numbering algorithm. A normal seed-zero FreeCell replay reaches a one-move near-win and its controller final transition persists the win/profile exactly once across undo, redo, and reopen. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Spider's dependency-free hostile-action and fixed seed/mode action-space tests exercise rejection atomicity, conservation, exposure, replay, and history invariants. A pinned normal one-suit replay now reaches a production-reconstructed 7/8 state, and controller coverage proves its final keyboard-routable move, exact 8/8 status, 0600 save, and idempotent 1/1 profile. Installed Spider one-, two-, and four-suit keyboard mutation, undo/redo, save/reopen, and AT-SPI acceptance passed at exact revision `d20ba41`; the exact-package final-transition gates, drag/touch, full keyboard traversal, and spoken screen-reader acceptance remain open.
 - TriPeaks standard mode now has a playable Slint surface backed by its deterministic engine, with numbered deals, undo/redo, hints, replay save/resume, bounded recovery, and declared keyboard/accessibility semantics. A normal seed-zero replay reaches a one-move near-win and its controller final transition persists the win/profile exactly once across undo, redo, and reopen. Exact-package final-action acceptance, optional modes, and broader hostile/property evidence remain open, so the capability stays Partial.
 - Pyramid standard mode now has a playable original Slint surface backed by its deterministic engine, with numbered deals, pair-to-13 and king removal, two redeals, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. A normal seed-zero replay reaches a one-pair near-win and its controller final transition persists the win/profile exactly once across undo, redo, and reopen. Exact-package final-action acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
@@ -41,6 +43,9 @@ Functional parity is achievable for the five core games and common collection fe
 - Draw-one/draw-three, standard/vegas scoring, timed/untimed, left-handed layout.
 - Click, double-click, drag/drop, keyboard play, undo/redo, hints, autocomplete.
 - Winning detection, tasteful original completion animation, save/resume.
+- A normal draw-one/Standard complete-deal candidate is pinned and locally
+  reconstructed through the final controller lifecycle; exact installed
+  final-transition acceptance remains open.
 
 ### M2 — Spider and FreeCell
 

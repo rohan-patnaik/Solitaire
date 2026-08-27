@@ -36,6 +36,10 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Choose draw one or draw three and Standard or Vegas scoring before starting a
   new deal. Vegas starts at -52 and awards five points per foundation card;
   both scoring modes are currently untimed and allow unlimited stock passes.
+- A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
+  foundation move before victory and exercises the final tableau/foundation
+  route, status, atomic save/reopen, undo/redo, and one-time local played/won
+  accounting. Exact-package final-action acceptance remains open.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
 

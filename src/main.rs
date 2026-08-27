@@ -2615,6 +2615,116 @@ mod tests {
     }
 
     #[test]
+    fn controller_completes_legal_klondike_replay_once_and_reopens() {
+        let game_path = test_save("klondike-near-win");
+        let profile_path = test_save("klondike-near-win-profile");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        let replay: solitaire::replay::Replay<Action, solitaire::klondike::ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let staged = Game::from_replay(&replay).unwrap();
+        solitaire::persistence::save_klondike(&game_path, &staged).unwrap();
+        let (near_win, revision) = load_klondike_revisioned(&game_path).unwrap();
+        let completed_statistics = solitaire::profile::GameStatistics {
+            deals_played: 1,
+            deals_won: 1,
+            latest_played_deal: Some(0),
+            latest_won_deal: Some(0),
+        };
+
+        let mut controller = controller(0);
+        controller.active = GameKind::Klondike;
+        controller.game = near_win;
+        controller.save_path = Some(game_path.clone());
+        controller.save_revisions[0] = Some(revision);
+        controller.local_profile_path = Some(profile_path.clone());
+        assert!(!profile_path.exists());
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::Klondike),
+            solitaire::profile::GameStatistics::default()
+        );
+
+        controller.activate_tableau(0, 0);
+        assert!(matches!(
+            controller.selection,
+            Some(Selection::Tableau {
+                column: 0,
+                count: 1,
+            })
+        ));
+        controller.activate_foundation(1);
+
+        assert_eq!(controller.status, "Deal complete — beautifully played");
+        assert!(controller.game.state.is_won());
+        assert_eq!(controller.game.state.card_count(), 52);
+        assert_eq!(controller.game.state.moves, 156);
+        assert_eq!(controller.game.state.score, 365);
+        assert_eq!(
+            controller
+                .local_profile
+                .statistics(ProfileGameKind::Klondike),
+            completed_statistics
+        );
+        assert!(!controller.local_profile_dirty);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&profile_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let won = controller.game.clone();
+        let won_save = fs::read(&game_path).unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&won_save).unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "klondike");
+        assert_eq!(envelope["payload"]["state"]["seed"], 0);
+        assert_eq!(envelope["payload"]["state"]["options"]["draw_mode"], "One");
+        assert_eq!(
+            envelope["payload"]["state"]["options"]["scoring"],
+            "Standard"
+        );
+        assert_eq!(
+            envelope["payload"]["actions"].as_array().unwrap().len(),
+            156
+        );
+        assert_eq!(load_klondike_revisioned(&game_path).unwrap().0, won);
+
+        let profile_bytes = fs::read(&profile_path).unwrap();
+        controller.undo();
+        assert_eq!(controller.status, "Move undone");
+        assert!(!controller.game.state.is_won());
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.redo();
+        assert_eq!(controller.status, "Move restored");
+        assert_eq!(controller.game, won);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.observe_active_profile();
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        let (reopened_game, _) = load_klondike_revisioned(&game_path).unwrap();
+        let (reopened_profile, _) = load_local_profile_revisioned(&profile_path).unwrap();
+        assert_eq!(reopened_game, won);
+        assert_eq!(
+            reopened_profile.statistics(ProfileGameKind::Klondike),
+            completed_statistics
+        );
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        assert_eq!(fs::read(&game_path).unwrap(), won_save);
+
+        remove_save(&game_path);
+        remove_save(&profile_path);
+    }
+
+    #[test]
     fn controller_completes_legal_spider_replay_once_and_reopens() {
         let game_path = test_save("spider-near-win");
         let profile_path = test_save("spider-near-win-profile");

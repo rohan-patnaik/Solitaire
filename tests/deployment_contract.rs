@@ -62,13 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("d1f82f8eb90c29ce25c80963083634dd6e1a105e"));
-    assert!(metadata.contains("actions/runs/33121031503"));
+    assert!(metadata.contains("5f81b4b1a76ddc99636a895ca5900059bd523299"));
+    assert!(metadata.contains("actions/runs/33123378335"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("d1f82f8eb90c29ce25c80963083634dd6e1a105e"));
-    assert!(generated.contains("actions/runs/33121031503"));
+    assert!(generated.contains("5f81b4b1a76ddc99636a895ca5900059bd523299"));
+    assert!(generated.contains("actions/runs/33123378335"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -118,7 +118,11 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
         );
     }
     assert!(catalog.contains("klondike_new_deal_choices_are_saved_and_reopen_with_exact_options"));
-    assert!(catalog.contains("The Vegas UI workflow still needs exact-package Wayland acceptance"));
+    assert!(
+        catalog.contains(
+            "The Vegas UI workflow and exact installed final foundation move remain open"
+        )
+    );
     assert!(release.contains("Both scoring modes remain untimed and allow unlimited stock"));
     let recovery_row = ui
         .find("Discard all unsaved progress and close Solitaire")
@@ -157,7 +161,11 @@ fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("docs/PUBLICATION_C22C173.md"));
-    assert!(catalog.contains("The Vegas UI workflow still needs exact-package Wayland acceptance"));
+    assert!(
+        catalog.contains(
+            "The Vegas UI workflow and exact installed final foundation move remain open"
+        )
+    );
 }
 
 #[test]
@@ -210,7 +218,7 @@ fn tripeaks_complete_deal_publication_gate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("docs/PUBLICATION_8604137.md"));
-    assert!(catalog.contains("0.1.0.r0.g8604137-1"));
+    assert!(catalog.contains("The exact installed final transition"));
 }
 
 #[test]
@@ -238,6 +246,108 @@ fn pyramid_complete_deal_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_D1F82F8.md"));
     assert!(catalog.contains("0.1.0.r0.gd1f82f8-1"));
+}
+
+#[test]
+fn freecell_complete_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_5F81B4B.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "5f81b4b1a76ddc99636a895ca5900059bd523299",
+        "d1f82f8eb90c29ce25c80963083634dd6e1a105e",
+        "6315af1ad8762c8861ce5c7915ed11464ef47df3",
+        "actions/runs/33123378335",
+        "job/98695558469",
+        "job/98695558244",
+        "solitaire-omarchy 0.1.0.r0.g5f81b4b-1",
+        "hash and structurally pin the actual",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire process was",
+        "installed keyboard/AT-SPI final-transition gate remains open",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 5f81b4b publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_5F81B4B.md"));
+    assert!(catalog.contains("0.1.0.r0.g5f81b4b-1"));
+}
+
+#[test]
+fn klondike_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/klondike-seed-zero-near-win.json");
+    let fixture = include_str!("fixtures/klondike-seed-zero-near-win.json");
+    let evidence = include_str!("../docs/KLONDIKE_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "klondike");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "klondike");
+    assert_eq!(envelope["payload"]["seed"], 0);
+    assert_eq!(envelope["payload"]["setup"]["options"]["draw_mode"], "One");
+    assert_eq!(
+        envelope["payload"]["setup"]["options"]["scoring"],
+        "Standard"
+    );
+    assert!(envelope["payload"]["setup"]["options"]["max_redeals"].is_null());
+    assert_eq!(envelope["payload"]["setup"]["options"]["timed"], false);
+    assert_eq!(envelope["payload"]["setup"]["elapsed_seconds"], 0);
+    assert_eq!(
+        envelope["payload"]["actions"].as_array().unwrap().len(),
+        155
+    );
+    assert!(envelope.get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope["payload"].get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("64c2c0ac7f7900ae019bb406d5cdb4b33cb1a27f6b6de2e1273373a7840c86ef")
+    );
+    for contract in [
+        "155 actions: 72 draws, three",
+        "King of Diamonds in tableau column 1",
+        "action 156 and wins at score",
+        "controller_completes_legal_klondike_replay_once_and_reopens",
+        "Deal complete — beautifully played",
+        "exactly one played and one won",
+        "continuously preserves the active desktop",
+        "rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing Klondike complete-deal boundary: {contract}"
+        );
+    }
+    for test in [
+        "legal_seed_zero_replay_reaches_a_one_move_near_win",
+        "controller_completes_legal_klondike_replay_once_and_reopens",
+        "klondike_complete_deal_candidate_is_pinned_without_overclaim",
+    ] {
+        assert!(catalog.contains(test), "missing Klondike evidence: {test}");
+    }
+    assert!(catalog.contains("exact installed final foundation move"));
+    assert!(controller.contains("Deal complete — beautifully played"));
+    assert!(ui.contains("callback tableau-activated(int, int)"));
+    assert!(ui.contains("callback foundation-activated(int)"));
+    assert!(ui.contains("accessible-action-default => { root.activated(); }"));
+    assert!(ui.contains("accessible-live-region: polite"));
 }
 
 #[test]
