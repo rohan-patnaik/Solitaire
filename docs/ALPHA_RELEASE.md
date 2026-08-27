@@ -103,11 +103,13 @@ exact installed final-action acceptance remains open. See
 [`FREECELL_COMPLETE_DEAL_ACCEPTANCE.md`](FREECELL_COMPLETE_DEAL_ACCEPTANCE.md).
 
 The native Klondike new-deal surface now offers draw-one or draw-three with
-Standard or Vegas scoring. Vegas starts at -52 and awards five points for each
-foundation card. A focused controller test covers the exact option choice and
-atomic save/reopen, but this UI workflow has not yet passed the exact-package
-Wayland gate. Both scoring modes remain untimed and allow unlimited stock
-passes.
+Standard or Vegas scoring and unlimited, one, or three stock redeals. Vegas
+starts at -52 and awards five points for each foundation card. Focused
+controller tests cover the exact choices, atomic save/reopen, bounded exhaustion,
+rejected-extra-redeal atomicity, and undo/redo. The current redeal count and
+bounded remainder are exposed to the native surface. This UI workflow has not
+yet passed the exact-package Wayland gate, and both scoring modes remain untimed.
+See [`KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md`](KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md).
 
 Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
 replay with only the exposed King of Diamonds remaining in tableau column 1.

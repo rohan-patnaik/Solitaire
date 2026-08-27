@@ -62,13 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("5f81b4b1a76ddc99636a895ca5900059bd523299"));
-    assert!(metadata.contains("actions/runs/33123378335"));
+    assert!(metadata.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
+    assert!(metadata.contains("actions/runs/33125817274"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("5f81b4b1a76ddc99636a895ca5900059bd523299"));
-    assert!(generated.contains("actions/runs/33123378335"));
+    assert!(generated.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
+    assert!(generated.contains("actions/runs/33125817274"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -105,12 +105,17 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
     for contract in [
         "model: [\"Draw 1\", \"Draw 3\"]",
         "model: [\"Standard\", \"Vegas\"]",
+        "model: [\"Unlimited\", \"1 redeal\", \"3 redeals\"]",
         "accessible-label: \"Draw mode for a new Klondike deal\"",
         "accessible-label: \"Scoring mode for a new Klondike deal\"",
+        "accessible-label: \"Stock redeal limit for a new Klondike deal\"",
         "accessible-label: \"Start a new Klondike deal\"",
+        "current-index <=> root.klondike-draw-index",
+        "current-index <=> root.klondike-scoring-index",
+        "current-index <=> root.klondike-redeal-index",
         "text: \"Next Klondike deal\"",
         "enabled: !root.has-pending-new-deal",
-        "root.new-game(root.klondike-draw-mode + \" · \" + root.klondike-scoring-mode)",
+        "root.new-game(root.klondike-draw-mode + \" · \" + root.klondike-scoring-mode + \" · \" + root.klondike-redeal-limit)",
     ] {
         assert!(
             ui.contains(contract),
@@ -120,10 +125,10 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
     assert!(catalog.contains("klondike_new_deal_choices_are_saved_and_reopen_with_exact_options"));
     assert!(
         catalog.contains(
-            "The Vegas UI workflow and exact installed final foundation move remain open"
+            "The Vegas and redeal-limit UI workflows and exact installed final foundation move remain open"
         )
     );
-    assert!(release.contains("Both scoring modes remain untimed and allow unlimited stock"));
+    assert!(release.contains("both scoring modes remain untimed"));
     let recovery_row = ui
         .find("Discard all unsaved progress and close Solitaire")
         .expect("recovery controls must exist");
@@ -163,7 +168,7 @@ fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
     assert!(catalog.contains("docs/PUBLICATION_C22C173.md"));
     assert!(
         catalog.contains(
-            "The Vegas UI workflow and exact installed final foundation move remain open"
+            "The Vegas and redeal-limit UI workflows and exact installed final foundation move remain open"
         )
     );
 }
@@ -245,7 +250,7 @@ fn pyramid_complete_deal_publication_gate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("docs/PUBLICATION_D1F82F8.md"));
-    assert!(catalog.contains("0.1.0.r0.gd1f82f8-1"));
+    assert!(catalog.contains("pyramid_complete_deal_publication_gate_is_pinned_without_overclaim"));
 }
 
 #[test]
@@ -274,6 +279,67 @@ fn freecell_complete_deal_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_5F81B4B.md"));
     assert!(catalog.contains("0.1.0.r0.g5f81b4b-1"));
+}
+
+#[test]
+fn klondike_complete_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_5F40BDC.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb",
+        "5f81b4b1a76ddc99636a895ca5900059bd523299",
+        "ddab109bc00743eeb5c60f4fc4339a39e1f1c452",
+        "actions/runs/33125817274",
+        "job/98703592996",
+        "job/98703593128",
+        "solitaire-omarchy 0.1.0.r0.g5f40bdc-1",
+        "no actionable findings",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire process was",
+        "installed keyboard/AT-SPI final-transition gate remains open",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 5f40bdc publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_5F40BDC.md"));
+    assert!(catalog.contains("0.1.0.r0.g5f40bdc-1"));
+}
+
+#[test]
+fn klondike_redeal_limit_candidate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "Unlimited`, `1 redeal`, and `3 redeals",
+        "persisted replay schema is unchanged",
+        "klondike_redeal_limits_are_atomic_reopenable_and_enforced",
+        "reopened_klondike_options_restore_combo_values_and_indices",
+        "No redeals remain",
+        "exact in-memory game and on-disk bytes",
+        "4 KiB hostile field",
+        "continuously preserve the active desktop",
+        "rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing Klondike redeal boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("klondike_redeal_limits_are_atomic_reopenable_and_enforced"));
+    assert!(catalog.contains("reopened_klondike_options_restore_combo_values_and_indices"));
+    assert!(catalog.contains("The Vegas and redeal-limit UI workflows"));
+    assert!(controller.contains("Some(\"1 redeal\") => Some(1)"));
+    assert!(controller.contains("Some(\"3 redeals\") => Some(3)"));
+    assert!(controller.contains("if controller.pending_new_deal.is_none()"));
+    assert!(ui.contains("model: [\"Unlimited\", \"1 redeal\", \"3 redeals\"]"));
+    assert!(ui.contains("accessible-label: \"Stock redeal limit for a new Klondike deal\""));
+    assert!(ui.contains("root.redeals-remaining < 0 ? \" / unlimited\""));
 }
 
 #[test]

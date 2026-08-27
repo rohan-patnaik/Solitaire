@@ -21,8 +21,9 @@ Functional parity is achievable for the five core games and common collection fe
 - `docs/offline-capabilities.json` is the canonical machine-readable status catalog; `docs/OFFLINE_CAPABILITIES.md` is generated and drift-checked. The catalog deliberately reports counts rather than a precise parity score.
 - M0 foundation is implemented and covered by CI, exact-revision Arch packaging checks, provenance records, and launcher contract tests. The detached Omarchy launcher's normal, missing-binary, immediate-startup-failure, and shell-restart workflows have exact live evidence and are Complete; packaging and persistence safety retain their separate Partial gaps.
 - Klondike has a playable vertical slice. Its new-deal controls expose draw-one,
-  draw-three, Standard, and Vegas scoring; both scoring modes currently remain
-  untimed with unlimited stock passes. A normal seed-zero default replay reaches
+  draw-three, Standard and Vegas scoring, plus unlimited, one, or three stock
+  redeals; the chosen bound is enforced and preserved across save/reopen. Both
+  scoring modes currently remain untimed. A normal seed-zero default replay reaches
   a one-move near-win and its controller final transition persists the win/profile
   exactly once across undo, redo, and reopen. The exact-package final transition
   and remaining M1 product workflows below are not yet complete.
@@ -46,6 +47,9 @@ Functional parity is achievable for the five core games and common collection fe
 - A normal draw-one/Standard complete-deal candidate is pinned and locally
   reconstructed through the final controller lifecycle; exact installed
   final-transition acceptance remains open.
+- Unlimited, one-, and three-redeal choices are keyboard/accessibility-declared,
+  atomically saved, enforced at exhaustion, and reopened exactly. Exact-package
+  selection and visible remaining-count acceptance remain open.
 
 ### M2 — Spider and FreeCell
 

@@ -46,6 +46,7 @@ enum NewDealVariant {
     Klondike {
         draw_mode: DrawMode,
         scoring: Scoring,
+        max_redeals: Option<u8>,
     },
     Spider(SuitMode),
     FreeCell(FreeCellDeal),
@@ -1181,23 +1182,10 @@ impl Controller {
 }
 
 fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVariant> {
+    if game == GameKind::Klondike {
+        return parse_klondike_variant(variant);
+    }
     match (game, variant) {
-        (GameKind::Klondike, "Draw 1" | "Draw 1 · Standard") => Some(NewDealVariant::Klondike {
-            draw_mode: DrawMode::One,
-            scoring: Scoring::Standard,
-        }),
-        (GameKind::Klondike, "Draw 1 · Vegas") => Some(NewDealVariant::Klondike {
-            draw_mode: DrawMode::One,
-            scoring: Scoring::Vegas,
-        }),
-        (GameKind::Klondike, "Draw 3" | "Draw 3 · Standard") => Some(NewDealVariant::Klondike {
-            draw_mode: DrawMode::Three,
-            scoring: Scoring::Standard,
-        }),
-        (GameKind::Klondike, "Draw 3 · Vegas") => Some(NewDealVariant::Klondike {
-            draw_mode: DrawMode::Three,
-            scoring: Scoring::Vegas,
-        }),
         (GameKind::Spider, "1 suit") => Some(NewDealVariant::Spider(SuitMode::One)),
         (GameKind::Spider, "2 suits") => Some(NewDealVariant::Spider(SuitMode::Two)),
         (GameKind::Spider, "4 suits") => Some(NewDealVariant::Spider(SuitMode::Four)),
@@ -1207,6 +1195,34 @@ fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVarian
         (GameKind::TriPeaks | GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
         _ => None,
     }
+}
+
+fn parse_klondike_variant(variant: &str) -> Option<NewDealVariant> {
+    let mut fields = variant.split(" · ");
+    let draw_mode = match fields.next()? {
+        "Draw 1" => DrawMode::One,
+        "Draw 3" => DrawMode::Three,
+        _ => return None,
+    };
+    let scoring = match fields.next() {
+        None | Some("Standard") => Scoring::Standard,
+        Some("Vegas") => Scoring::Vegas,
+        _ => return None,
+    };
+    let max_redeals = match fields.next() {
+        None | Some("Unlimited") => None,
+        Some("1 redeal") => Some(1),
+        Some("3 redeals") => Some(3),
+        _ => return None,
+    };
+    if fields.next().is_some() {
+        return None;
+    }
+    Some(NewDealVariant::Klondike {
+        draw_mode,
+        scoring,
+        max_redeals,
+    })
 }
 
 fn parse_freecell_deal_number(input: &str) -> Option<u64> {
@@ -1235,17 +1251,22 @@ const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bo
 
 fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
     match (request.game, request.variant) {
-        (GameKind::Klondike, NewDealVariant::Klondike { draw_mode, scoring }) => {
-            ProspectiveGame::Klondike(Game::new(
-                seed,
-                Options {
-                    draw_mode,
-                    scoring,
-                    max_redeals: None,
-                    timed: false,
-                },
-            ))
-        }
+        (
+            GameKind::Klondike,
+            NewDealVariant::Klondike {
+                draw_mode,
+                scoring,
+                max_redeals,
+            },
+        ) => ProspectiveGame::Klondike(Game::new(
+            seed,
+            Options {
+                draw_mode,
+                scoring,
+                max_redeals,
+                timed: false,
+            },
+        )),
         (GameKind::Spider, NewDealVariant::Spider(mode)) => {
             ProspectiveGame::Spider(SpiderGame::new(seed, mode))
         }
@@ -1770,8 +1791,54 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_longest_column(longest_column(&state.tableau));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
     app.set_deal_number(SharedString::default());
-    app.set_redeals(0);
-    app.set_redeals_remaining(0);
+    app.set_redeals(i32::from(state.redeals));
+    app.set_redeals_remaining(state.options.max_redeals.map_or(-1, |maximum| {
+        i32::from(maximum.saturating_sub(state.redeals))
+    }));
+    render_klondike_options(app, controller);
+}
+
+fn render_klondike_options(app: &AppWindow, controller: &Controller) {
+    let options = controller.game.state.options;
+    if controller.pending_new_deal.is_none() {
+        app.set_klondike_draw_index(match options.draw_mode {
+            DrawMode::One => 0,
+            DrawMode::Three => 1,
+        });
+        app.set_klondike_draw_mode(
+            match options.draw_mode {
+                DrawMode::One => "Draw 1",
+                DrawMode::Three => "Draw 3",
+            }
+            .into(),
+        );
+        app.set_klondike_scoring_index(match options.scoring {
+            Scoring::Standard => 0,
+            Scoring::Vegas => 1,
+        });
+        app.set_klondike_scoring_mode(
+            match options.scoring {
+                Scoring::Standard => "Standard",
+                Scoring::Vegas => "Vegas",
+            }
+            .into(),
+        );
+        app.set_klondike_redeal_index(match options.max_redeals {
+            None => 0,
+            Some(1) => 1,
+            Some(3) => 2,
+            Some(_) => -1,
+        });
+        app.set_klondike_redeal_limit(
+            match options.max_redeals {
+                None => "Unlimited",
+                Some(1) => "1 redeal",
+                Some(3) => "3 redeals",
+                Some(_) => "Custom",
+            }
+            .into(),
+        );
+    }
 }
 
 fn render_spider(app: &AppWindow, controller: &Controller) {
@@ -3469,6 +3536,99 @@ mod tests {
     }
 
     #[test]
+    fn klondike_redeal_limits_are_atomic_reopenable_and_enforced() {
+        for (label, expected) in [
+            ("Unlimited", None),
+            ("1 redeal", Some(1)),
+            ("3 redeals", Some(3)),
+        ] {
+            let path = test_save(&format!("klondike-redeal-{label}"));
+            remove_save(&path);
+            let mut controller = controller(214);
+            controller.save_path = Some(path.clone());
+            controller.new_game(&format!("Draw 3 · Standard · {label}"));
+            assert_eq!(controller.game.state.options.max_redeals, expected);
+            assert_eq!(load_klondike_revisioned(&path).unwrap().0, controller.game);
+            remove_save(&path);
+        }
+
+        let path = test_save("klondike-redeal-enforced");
+        remove_save(&path);
+        let mut controller = controller(215);
+        controller.save_path = Some(path.clone());
+        controller.new_game("Draw 3 · Standard · 1 redeal");
+        for _ in 0..8 {
+            controller.draw_or_recycle();
+        }
+        controller.draw_or_recycle();
+        assert_eq!(controller.game.state.redeals, 1);
+        for _ in 0..8 {
+            controller.draw_or_recycle();
+        }
+        let exhausted = controller.game.clone();
+        let saved = fs::read(&path).unwrap();
+        controller.draw_or_recycle();
+        assert_eq!(controller.status, "No redeals remain");
+        assert_eq!(controller.game, exhausted);
+        assert_eq!(fs::read(&path).unwrap(), saved);
+        controller.undo();
+        assert!(controller.game.can_redo());
+        controller.redo();
+        assert_eq!(controller.game, exhausted);
+        assert_eq!(fs::read(&path).unwrap(), saved);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(load_klondike_revisioned(&path).unwrap().0, exhausted);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn reopened_klondike_options_restore_combo_values_and_indices() {
+        let mut controller = controller(216);
+        controller.game = Game::new(
+            216,
+            Options {
+                draw_mode: DrawMode::Three,
+                scoring: Scoring::Vegas,
+                max_redeals: Some(3),
+                timed: false,
+            },
+        );
+        let app = AppWindow::new().unwrap();
+        render(&app, &controller);
+        assert_eq!(app.get_klondike_draw_mode(), "Draw 3");
+        assert_eq!(app.get_klondike_draw_index(), 1);
+        assert_eq!(app.get_klondike_scoring_mode(), "Vegas");
+        assert_eq!(app.get_klondike_scoring_index(), 1);
+        assert_eq!(app.get_klondike_redeal_limit(), "3 redeals");
+        assert_eq!(app.get_klondike_redeal_index(), 2);
+
+        controller.game.state.options.max_redeals = Some(2);
+        render(&app, &controller);
+        assert_eq!(app.get_klondike_redeal_limit(), "Custom");
+        assert_eq!(app.get_klondike_redeal_index(), -1);
+
+        app.set_klondike_draw_mode("Draw 1".into());
+        app.set_klondike_draw_index(0);
+        app.set_klondike_scoring_mode("Standard".into());
+        app.set_klondike_scoring_index(0);
+        app.set_klondike_redeal_limit("1 redeal".into());
+        app.set_klondike_redeal_index(1);
+        controller.pending_new_deal =
+            parse_klondike_variant("Draw 1 · Standard · 1 redeal").map(|variant| PendingNewDeal {
+                game: GameKind::Klondike,
+                variant,
+            });
+        render(&app, &controller);
+        assert_eq!(app.get_klondike_draw_index(), 0);
+        assert_eq!(app.get_klondike_scoring_index(), 0);
+        assert_eq!(app.get_klondike_redeal_index(), 1);
+        assert_eq!(app.get_klondike_redeal_limit(), "1 redeal");
+    }
+
+    #[test]
     fn exact_freecell_deal_is_strict_atomic_reopenable_and_does_not_consume_next_deal() {
         let game_path = test_save("freecell-exact-number");
         let counter_path = test_save("freecell-exact-counter");
@@ -3692,6 +3852,8 @@ mod tests {
             "Draw 3 · Vegas ",
             "Draw 2 · Standard",
             "Draw 3 · Unknown",
+            "Draw 3 · Vegas · 2 redeals",
+            "Draw 3 · Vegas · 1 redeal · trailing",
         ] {
             controller.new_game(invalid);
             assert_eq!(controller.game, original_game, "{invalid:?}");
@@ -3704,6 +3866,14 @@ mod tests {
                 "Invalid new-deal options; current game preserved"
             );
         }
+
+        let oversized = format!("Draw 3 · Vegas · {}", "3".repeat(4_096));
+        controller.new_game(&oversized);
+        assert_eq!(controller.game, original_game);
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(fs::read(&game_path).unwrap(), original_save);
+        assert!(!counter_path.exists());
+        assert!(controller.pending_new_deal.is_none());
 
         controller.dirty[0] = true;
         controller.new_game("Draw 3 · Vegas");
