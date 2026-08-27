@@ -64,6 +64,13 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+The native Klondike new-deal surface now offers draw-one or draw-three with
+Standard or Vegas scoring. Vegas starts at -52 and awards five points for each
+foundation card. A focused controller test covers the exact option choice and
+atomic save/reopen, but this UI workflow has not yet passed the exact-package
+Wayland gate. Both scoring modes remain untimed and allow unlimited stock
+passes.
+
 At published revision `4b31024426b73fafe93597e4cd42312eef2b26b0`
 (tree `54d9c6ee27c9e0839e21579aac8a918549a4dbc1`), the exact plugin's normal,
 missing-binary, and immediate-startup-failure paths passed live Omarchy/Wayland

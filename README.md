@@ -33,7 +33,9 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Select the stock to draw or recycle the waste.
 - Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
 - Card and empty-slot controls declare assistive-technology names/default actions, accept Tab focus plus Space/Enter activation, and declare status changes as a polite live region. Focused installed passes exercised these semantics through keyboard input and AT-SPI; full keyboard-only traversal, spoken screen-reader output, and gamepad navigation remain M5 work.
-- Choose draw one or draw three before starting a new deal.
+- Choose draw one or draw three and Standard or Vegas scoring before starting a
+  new deal. Vegas starts at -52 and awards five points per foundation card;
+  both scoring modes are currently untimed and allow unlimited stock passes.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
 

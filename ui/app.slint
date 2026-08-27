@@ -146,6 +146,8 @@ export component AppWindow inherits Window {
     in property <bool> has-any-unsaved-changes;
     in property <bool> has-pending-new-deal;
     in property <bool> has-pending-save-conflict;
+    in-out property <string> klondike-draw-mode: "Draw 1";
+    in-out property <string> klondike-scoring-mode: "Standard";
 
     callback select-game(string);
     callback new-game(string);
@@ -228,19 +230,6 @@ export component AppWindow inherits Window {
                 font-size: 17px;
                 vertical-alignment: center;
             }
-            if root.game-kind == "Klondike": HorizontalBox {
-                spacing: 8px;
-                draw-mode := ComboBox {
-                    model: ["Draw 1", "Draw 3"];
-                    current-value: "Draw 1";
-                    accessible-label: "Draw mode for a new Klondike deal";
-                }
-                Button {
-                    text: "New deal";
-                    accessible-label: "Start a new Klondike deal";
-                    clicked => { root.new-game(draw-mode.current-value); }
-                }
-            }
             if root.game-kind == "Spider": HorizontalBox {
                 spacing: 8px;
                 spider-mode := ComboBox {
@@ -315,6 +304,40 @@ export component AppWindow inherits Window {
             if root.game-kind == "Klondike": Button {
                 text: "Finish safe moves";
                 clicked => { root.autocomplete-requested(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        if root.game-kind == "Klondike": HorizontalBox {
+            spacing: 10px;
+            vertical-stretch: 0;
+            min-height: 40px;
+            preferred-height: 40px;
+            max-height: 40px;
+            Text {
+                text: "Next Klondike deal";
+                color: #dce9e3;
+                vertical-alignment: center;
+            }
+            draw-mode := ComboBox {
+                model: ["Draw 1", "Draw 3"];
+                current-value <=> root.klondike-draw-mode;
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Draw mode for a new Klondike deal";
+            }
+            scoring-mode := ComboBox {
+                model: ["Standard", "Vegas"];
+                current-value <=> root.klondike-scoring-mode;
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Scoring mode for a new Klondike deal";
+            }
+            Button {
+                text: "New deal";
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Start a new Klondike deal";
+                clicked => {
+                    root.new-game(root.klondike-draw-mode + " · " + root.klondike-scoring-mode);
+                }
             }
             Rectangle { horizontal-stretch: 1; }
         }

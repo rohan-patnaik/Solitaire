@@ -96,6 +96,42 @@ fn alpha_release_evidence_keeps_acceptance_gaps_explicit() {
 }
 
 #[test]
+fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let release = include_str!("../docs/ALPHA_RELEASE.md");
+
+    for contract in [
+        "model: [\"Draw 1\", \"Draw 3\"]",
+        "model: [\"Standard\", \"Vegas\"]",
+        "accessible-label: \"Draw mode for a new Klondike deal\"",
+        "accessible-label: \"Scoring mode for a new Klondike deal\"",
+        "accessible-label: \"Start a new Klondike deal\"",
+        "text: \"Next Klondike deal\"",
+        "enabled: !root.has-pending-new-deal",
+        "root.new-game(root.klondike-draw-mode + \" · \" + root.klondike-scoring-mode)",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing Klondike option contract: {contract}"
+        );
+    }
+    assert!(catalog.contains("klondike_new_deal_choices_are_saved_and_reopen_with_exact_options"));
+    assert!(catalog.contains("The Vegas UI workflow still needs exact-package Wayland acceptance"));
+    assert!(release.contains("Both scoring modes remain untimed and allow unlimited stock"));
+    let recovery_row = ui
+        .find("Discard all unsaved progress and close Solitaire")
+        .expect("recovery controls must exist");
+    let options_row = ui
+        .find("text: \"Next Klondike deal\"")
+        .expect("dedicated Klondike options row must exist");
+    let status_surface = ui
+        .find("status-surface := Rectangle")
+        .expect("status surface must exist");
+    assert!(recovery_row < options_row && options_row < status_surface);
+}
+
+#[test]
 fn spider_variant_acceptance_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/OMARCHY_WAYLAND_ACCEPTANCE_D20BA41.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -482,7 +518,7 @@ fn long_recovery_status_has_a_dedicated_scrollable_surface() {
             "missing status-surface contract: {contract}"
         );
     }
-    assert_eq!(ui.matches("vertical-stretch: 0").count(), 3);
+    assert_eq!(ui.matches("vertical-stretch: 0").count(), 4);
 
     let recovery_action = ui
         .find("Discard all unsaved progress and close Solitaire")

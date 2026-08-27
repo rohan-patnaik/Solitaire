@@ -41,9 +41,20 @@ enum GameKind {
     Pyramid,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewDealVariant {
+    Klondike {
+        draw_mode: DrawMode,
+        scoring: Scoring,
+    },
+    Spider(SuitMode),
+    Standard,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct PendingNewDeal {
     game: GameKind,
-    variant: String,
+    variant: NewDealVariant,
 }
 
 enum ProspectiveGame {
@@ -330,9 +341,13 @@ impl Controller {
     }
 
     fn new_game(&mut self, variant: &str) {
+        let Some(variant) = parse_new_deal_variant(self.active, variant) else {
+            self.status = "Invalid new-deal options; current game preserved".into();
+            return;
+        };
         let request = PendingNewDeal {
             game: self.active,
-            variant: variant.to_owned(),
+            variant,
         };
         self.pending_new_deal = Some(request);
         self.pending_new_deal_conflict = false;
@@ -352,44 +367,17 @@ impl Controller {
             self.status = "The pending new deal was cancelled after switching games".into();
             return;
         }
+        if !new_deal_variant_matches(request.game, request.variant) {
+            self.pending_new_deal = Some(request);
+            self.status = "Invalid pending new-deal options; current game preserved".into();
+            return;
+        }
         let Some(seed) = self.take_next_seed(request.game) else {
             self.status = "No further deal number is representable; existing game preserved".into();
             self.pending_new_deal = Some(request);
             return;
         };
-        let candidate = match request.game {
-            GameKind::Klondike => {
-                let draw_mode = if request.variant == "Draw 3" {
-                    DrawMode::Three
-                } else {
-                    DrawMode::One
-                };
-                ProspectiveGame::Klondike(Game::new(
-                    seed,
-                    Options {
-                        draw_mode,
-                        scoring: Scoring::Standard,
-                        max_redeals: None,
-                        timed: false,
-                    },
-                ))
-            }
-            GameKind::Spider => {
-                let mode = match request.variant.as_str() {
-                    "2 suits" => SuitMode::Two,
-                    "4 suits" => SuitMode::Four,
-                    _ => SuitMode::One,
-                };
-                ProspectiveGame::Spider(SpiderGame::new(seed, mode))
-            }
-            GameKind::FreeCell => ProspectiveGame::FreeCell(FreeCellGame::new(seed)),
-            GameKind::TriPeaks => {
-                ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options::default()))
-            }
-            GameKind::Pyramid => {
-                ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options::default()))
-            }
-        };
+        let candidate = prospective_game(request, seed);
         let index = self.active_index();
         let saved = match &candidate {
             ProspectiveGame::Klondike(game) => self
@@ -1141,6 +1129,74 @@ impl Controller {
         } else {
             self.status = "No unsaved disk state needs reloading".into();
         }
+    }
+}
+
+fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVariant> {
+    match (game, variant) {
+        (GameKind::Klondike, "Draw 1" | "Draw 1 · Standard") => Some(NewDealVariant::Klondike {
+            draw_mode: DrawMode::One,
+            scoring: Scoring::Standard,
+        }),
+        (GameKind::Klondike, "Draw 1 · Vegas") => Some(NewDealVariant::Klondike {
+            draw_mode: DrawMode::One,
+            scoring: Scoring::Vegas,
+        }),
+        (GameKind::Klondike, "Draw 3" | "Draw 3 · Standard") => Some(NewDealVariant::Klondike {
+            draw_mode: DrawMode::Three,
+            scoring: Scoring::Standard,
+        }),
+        (GameKind::Klondike, "Draw 3 · Vegas") => Some(NewDealVariant::Klondike {
+            draw_mode: DrawMode::Three,
+            scoring: Scoring::Vegas,
+        }),
+        (GameKind::Spider, "1 suit") => Some(NewDealVariant::Spider(SuitMode::One)),
+        (GameKind::Spider, "2 suits") => Some(NewDealVariant::Spider(SuitMode::Two)),
+        (GameKind::Spider, "4 suits") => Some(NewDealVariant::Spider(SuitMode::Four)),
+        (GameKind::FreeCell, "Next numbered deal")
+        | (GameKind::TriPeaks | GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
+        _ => None,
+    }
+}
+
+const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bool {
+    matches!(
+        (game, variant),
+        (GameKind::Klondike, NewDealVariant::Klondike { .. })
+            | (GameKind::Spider, NewDealVariant::Spider(_))
+            | (
+                GameKind::FreeCell | GameKind::TriPeaks | GameKind::Pyramid,
+                NewDealVariant::Standard
+            )
+    )
+}
+
+fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
+    match (request.game, request.variant) {
+        (GameKind::Klondike, NewDealVariant::Klondike { draw_mode, scoring }) => {
+            ProspectiveGame::Klondike(Game::new(
+                seed,
+                Options {
+                    draw_mode,
+                    scoring,
+                    max_redeals: None,
+                    timed: false,
+                },
+            ))
+        }
+        (GameKind::Spider, NewDealVariant::Spider(mode)) => {
+            ProspectiveGame::Spider(SpiderGame::new(seed, mode))
+        }
+        (GameKind::FreeCell, NewDealVariant::Standard) => {
+            ProspectiveGame::FreeCell(FreeCellGame::new(seed))
+        }
+        (GameKind::TriPeaks, NewDealVariant::Standard) => {
+            ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options::default()))
+        }
+        (GameKind::Pyramid, NewDealVariant::Standard) => {
+            ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options::default()))
+        }
+        _ => unreachable!("new-deal variant compatibility was checked before seed reservation"),
     }
 }
 
@@ -2882,6 +2938,97 @@ mod tests {
         let (saved, _) = load_klondike_revisioned(&path).unwrap();
         assert_eq!(saved, controller.game);
         remove_save(&path);
+    }
+
+    #[test]
+    fn klondike_new_deal_choices_are_saved_and_reopen_with_exact_options() {
+        for (choice, draw_mode, scoring, starting_score) in [
+            ("Draw 1 · Standard", DrawMode::One, Scoring::Standard, 0),
+            ("Draw 1 · Vegas", DrawMode::One, Scoring::Vegas, -52),
+            ("Draw 3 · Standard", DrawMode::Three, Scoring::Standard, 0),
+            ("Draw 3 · Vegas", DrawMode::Three, Scoring::Vegas, -52),
+        ] {
+            let path = test_save(&format!("klondike-new-deal-{choice}"));
+            remove_save(&path);
+            let mut controller = controller(212);
+            controller.save_path = Some(path.clone());
+
+            controller.new_game(choice);
+
+            assert_eq!(controller.game.state.options.draw_mode, draw_mode);
+            assert_eq!(controller.game.state.options.scoring, scoring);
+            assert_eq!(controller.game.state.options.max_redeals, None);
+            assert!(!controller.game.state.options.timed);
+            assert_eq!(controller.game.state.score, starting_score);
+            let (reopened, _) = load_klondike_revisioned(&path).unwrap();
+            assert_eq!(reopened, controller.game);
+            remove_save(&path);
+        }
+    }
+
+    #[test]
+    fn malformed_new_deal_options_preserve_game_save_counter_and_pending_request() {
+        let game_path = test_save("invalid-new-deal-game");
+        let counter_path = test_save("invalid-new-deal-counter");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+        let mut controller = controller(213);
+        controller.save_path = Some(game_path.clone());
+        controller.deal_counters_path = Some(counter_path.clone());
+        assert!(controller.save());
+        let original_game = controller.game.clone();
+        let original_save = fs::read(&game_path).unwrap();
+        let original_counters = controller.next_seeds;
+
+        for invalid in [
+            "",
+            "Draw 3 Vegas",
+            " Draw 3 · Vegas",
+            "Draw 3 · Vegas ",
+            "Draw 2 · Standard",
+            "Draw 3 · Unknown",
+        ] {
+            controller.new_game(invalid);
+            assert_eq!(controller.game, original_game, "{invalid:?}");
+            assert_eq!(controller.next_seeds, original_counters, "{invalid:?}");
+            assert_eq!(fs::read(&game_path).unwrap(), original_save, "{invalid:?}");
+            assert!(!counter_path.exists(), "{invalid:?}");
+            assert!(controller.pending_new_deal.is_none(), "{invalid:?}");
+            assert_eq!(
+                controller.status,
+                "Invalid new-deal options; current game preserved"
+            );
+        }
+
+        controller.dirty[0] = true;
+        controller.new_game("Draw 3 · Vegas");
+        let pending = controller.pending_new_deal;
+        assert!(pending.is_some());
+        controller.new_game("Draw 3 Vegas");
+        assert!(controller.pending_new_deal == pending);
+        assert_eq!(controller.game, original_game);
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(fs::read(&game_path).unwrap(), original_save);
+        assert!(!counter_path.exists());
+
+        let hostile_pending = PendingNewDeal {
+            game: GameKind::Klondike,
+            variant: NewDealVariant::Standard,
+        };
+        controller.pending_new_deal = Some(hostile_pending);
+        controller.commit_pending_new_deal();
+        assert!(controller.pending_new_deal == Some(hostile_pending));
+        assert_eq!(controller.game, original_game);
+        assert_eq!(controller.next_seeds, original_counters);
+        assert_eq!(fs::read(&game_path).unwrap(), original_save);
+        assert!(!counter_path.exists());
+        assert_eq!(
+            controller.status,
+            "Invalid pending new-deal options; current game preserved"
+        );
+
+        remove_save(&game_path);
+        remove_save(&counter_path);
     }
 
     #[test]
