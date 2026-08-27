@@ -527,6 +527,45 @@ mod tests {
     }
 
     #[test]
+    fn legal_seed_zero_replay_reaches_a_one_pair_near_win() {
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/pyramid-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        assert_eq!(envelope["version"], 1);
+        assert_eq!(envelope["game"], "pyramid");
+        let replay: Replay<Action, Options> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let mut game = Game::from_replay(&replay).unwrap();
+
+        assert_eq!(game.state.seed, 0);
+        assert_eq!(game.state.options, Options::default());
+        assert_eq!(game.state.pyramid.iter().flatten().count(), 1);
+        assert!(game.state.pyramid[0].is_some());
+        assert!(game.state.is_exposed(0));
+        assert_eq!(game.state.stock.len(), 10);
+        assert_eq!(game.state.waste.len(), 1);
+        assert_eq!(game.state.redeals, 2);
+        assert_eq!(game.state.score, 400);
+        assert_eq!(game.state.moves, 62);
+        assert_eq!(game.state.card_count(), 12);
+        assert_eq!(
+            game.state.pyramid[0].unwrap().rank.value()
+                + game.state.waste.last().unwrap().rank.value(),
+            13
+        );
+        assert!(!game.state.is_won());
+
+        game.apply(Action::RemovePair(Source::Pyramid(0), Source::Waste))
+            .unwrap();
+        assert!(game.state.is_won());
+        assert_eq!(game.state.score, 420);
+        assert_eq!(game.state.moves, 63);
+        assert_eq!(game.state.card_count(), 10);
+        assert_eq!(game.replay().actions.len(), 63);
+    }
+
+    #[test]
     fn malformed_and_oversized_replays_are_rejected() {
         let mut wrong_game = Game::new(1, Options::default()).replay();
         wrong_game.game = "freecell".into();

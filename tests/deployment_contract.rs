@@ -62,13 +62,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("f6b0cb7e55d296bdf77714efc48a1775b858c041"));
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
-    assert!(metadata.contains("d9d0498d8854fb9268b6105c2a767710a63e40e6"));
-    assert!(metadata.contains("actions/runs/33116183706"));
+    assert!(metadata.contains("860413721e62d8967a938a04562491919b219ab5"));
+    assert!(metadata.contains("actions/runs/33118432350"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("d9d0498d8854fb9268b6105c2a767710a63e40e6"));
-    assert!(generated.contains("actions/runs/33116183706"));
+    assert!(generated.contains("860413721e62d8967a938a04562491919b219ab5"));
+    assert!(generated.contains("actions/runs/33118432350"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -184,7 +184,33 @@ fn freecell_numbered_deal_publication_gate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("docs/PUBLICATION_D9D0498.md"));
-    assert!(catalog.contains("0.1.0.r0.gd9d0498-1"));
+}
+
+#[test]
+fn tripeaks_complete_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_8604137.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "860413721e62d8967a938a04562491919b219ab5",
+        "d9d0498d8854fb9268b6105c2a767710a63e40e6",
+        "36a188bec20487dc914e610eb46f87bb409f25e8",
+        "actions/runs/33118432350",
+        "job/98678969667",
+        "job/98678969895",
+        "solitaire-omarchy 0.1.0.r0.g8604137-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or Solitaire process was",
+        "installed keyboard/AT-SPI final-transition gate remains open",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 8604137 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_8604137.md"));
+    assert!(catalog.contains("0.1.0.r0.g8604137-1"));
 }
 
 #[test]
@@ -431,6 +457,101 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
     assert!(catalog.contains("The exact installed final transition"));
     assert!(controller.contains("TriPeaks complete — all three peaks are clear"));
     assert!(ui.contains("callback tripeaks-tableau-activated(int)"));
+    assert!(ui.contains("accessible-action-default => { root.activated(); }"));
+    assert!(ui.contains("accessible-live-region: polite"));
+}
+
+#[test]
+fn pyramid_complete_deal_candidate_is_pinned_without_overclaim() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pyramid-seed-zero-near-win.json");
+    let fixture = include_str!("fixtures/pyramid-seed-zero-near-win.json");
+    let evidence = include_str!("../docs/PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+
+    let envelope: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert_eq!(envelope["game"], "pyramid");
+    assert_eq!(envelope["payload"]["version"], 2);
+    assert_eq!(envelope["payload"]["game"], "pyramid");
+    assert_eq!(envelope["payload"]["seed"], 0);
+    assert_eq!(envelope["payload"]["setup"]["max_redeals"], 2);
+    let actions = envelope["payload"]["actions"].as_array().unwrap();
+    assert_eq!(actions.len(), 62);
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| action.as_str() == Some("Draw"))
+            .count(),
+        38
+    );
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| action.as_str() == Some("Recycle"))
+            .count(),
+        2
+    );
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| action.get("RemovePair").is_some())
+            .count(),
+        18
+    );
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| action.get("RemoveKing").is_some())
+            .count(),
+        4
+    );
+    assert!(envelope["payload"].get("state").is_none());
+    assert!(envelope.get("profile").is_none());
+    let checksum = std::process::Command::new("sha256sum")
+        .arg(&fixture_path)
+        .output()
+        .unwrap();
+    assert!(checksum.status.success());
+    assert_eq!(
+        String::from_utf8(checksum.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next(),
+        Some("c2ed2aba92d2af5ea4beff5a15d94c0892a6bf54b3b05f3eec7b6cb1a49777aa")
+    );
+    for contract in [
+        "pair before victory",
+        "Production `Game::from_replay` accepts every action",
+        "represented cards account for the original 52-card deck",
+        "Pyramid complete — every tableau card is clear",
+        "controller_completes_legal_pyramid_replay_once_and_reopens",
+        "exactly one played and one won observation",
+        "Pyramid tableau position 1",
+        "internal callback index is `0`",
+        "real-platform, and profile rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing Pyramid complete-deal boundary: {contract}"
+        );
+    }
+    for test in [
+        "legal_seed_zero_replay_reaches_a_one_pair_near_win",
+        "controller_completes_legal_pyramid_replay_once_and_reopens",
+        "pyramid_complete_deal_candidate_is_pinned_without_overclaim",
+    ] {
+        assert!(catalog.contains(test), "missing Pyramid evidence: {test}");
+    }
+    assert!(catalog.contains(
+        "{\"id\":\"game.pyramid\",\"title\":\"Playable Pyramid\",\"status\":\"partial\""
+    ));
+    assert!(catalog.contains("The exact installed final transition"));
+    assert!(controller.contains("Pyramid complete — every tableau card is clear"));
+    assert!(ui.contains("callback pyramid-tableau-activated(int)"));
+    assert!(ui.contains("callback pyramid-waste-activated"));
     assert!(ui.contains("accessible-action-default => { root.activated(); }"));
     assert!(ui.contains("accessible-live-region: polite"));
 }

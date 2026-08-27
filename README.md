@@ -52,6 +52,10 @@ The active game's local statistics count a deal as played on its first successfu
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
 - Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Installed AT-SPI acceptance covers the five game surfaces and all three Spider suit modes; full keyboard-only traversal and spoken screen-reader output remain pending.
 - In standard Pyramid, activate an exposed king to remove it, or activate two exposed tableau/waste cards whose ranks total 13. The original seven-row layout exposes the exact deal number, stock, waste, score, move count, redeals, hints, and win status. Covered-card identities stay hidden visually and from accessible names.
+- A checked-in normal seed-zero Pyramid replay reconstructs to one legal pair
+  before victory and exercises final selection/pair routing, status, atomic
+  save/reopen, undo/redo, and one-time local played/won accounting.
+  Exact-package final-action acceptance remains open.
 - In standard TriPeaks, activate an exposed tableau card one rank above or below the waste, without King/Ace wraparound, or activate the stock/waste control to draw. The original four-row layout exposes deal, stock, waste, streak score, move count, hints, and win status without copying vendor presentation.
 - A checked-in normal seed-zero TriPeaks replay reconstructs to one legal move
   before victory and exercises the final status, atomic save/reopen, undo/redo,

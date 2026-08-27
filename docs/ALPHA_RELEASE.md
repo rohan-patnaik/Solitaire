@@ -64,6 +64,14 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+Pyramid deal zero now has a checked-in normal 62-action replay with one exposed
+top card and one waste card remaining whose ranks total 13. Production replay
+reconstruction and the controller's keyboard-routable final selection/pair
+prove the complete status, score, 0600 game/profile persistence, exact one-time
+played/won observation, undo/redo idempotence, and loader-level reopen. This is
+candidate evidence; exact installed final-action acceptance remains open. See
+[`PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md`](PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md).
+
 TriPeaks deal zero now has a checked-in normal replay with 48 legal actions and
 one exposed tableau card remaining. Production replay reconstruction and the
 controller's keyboard-routable final action prove the complete status, score,
@@ -145,9 +153,10 @@ package files.
 
 ## Known alpha limits
 
-- No five complete wins were played through the installed UI. A normal
-  TriPeaks complete-deal transcript now proves its final controller lifecycle,
-  but the installed transition and the other game win transitions,
+- No five complete wins were played through the installed UI. Normal TriPeaks
+  and Pyramid complete-deal transcripts now prove their final
+  controller lifecycles, but the installed transitions and other game win
+  transitions,
   full rule variants, broader hostile/property tests, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and optional
   TriPeaks modes remain incomplete or unverified.
