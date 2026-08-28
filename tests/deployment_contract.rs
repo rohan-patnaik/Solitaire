@@ -467,6 +467,20 @@ fn pyramid_redeal_limit_candidate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("pyramid_redeal_limits_are_strict_atomic_reopenable_and_enforced"));
     assert!(catalog.contains("Published builds through b50faa5 reject and quarantine"));
+    assert_eq!(
+        catalog
+            .matches("docs/PYRAMID_REDEAL_LIMIT_ACCEPTANCE.md")
+            .count(),
+        3
+    );
+    assert_eq!(
+        catalog
+            .matches("pyramid_redeal_limit_candidate_is_pinned_without_overclaim")
+            .count(),
+        3
+    );
+    assert!(catalog.contains("Pyramid redeal selector's exact-package value/index behavior"));
+    assert!(catalog.contains("TriPeaks and Pyramid rule selectors are automated candidate"));
     assert!(controller.contains("(GameKind::Pyramid, \"No redeals\")"));
     assert!(controller.contains("fn pyramid_ui_options_for_render"));
     assert!(ui.contains("model: [\"No redeals\", \"1 redeal\", \"2 redeals\"]"));

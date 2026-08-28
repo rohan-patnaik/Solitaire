@@ -526,7 +526,7 @@ pub fn load_tripeaks_revisioned(path: &Path) -> Result<(tripeaks::Game, SaveRevi
     load_with_revision(path, parse_tripeaks)
 }
 
-/// Saves a standard Pyramid game as a versioned deterministic replay.
+/// Saves a Pyramid game as a versioned deterministic replay.
 ///
 /// # Errors
 /// Returns an I/O or serialization error if the atomic save fails.
