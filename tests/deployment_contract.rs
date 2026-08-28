@@ -74,12 +74,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
     assert!(metadata.contains("d3c384a188bd1281291bc02acf16ebbef8077849"));
     assert!(metadata.contains("4e80b44b4ea3d4820fa5e38f1e8e71aa4e33386a"));
-    assert!(metadata.contains("actions/runs/33163743373"));
+    assert!(metadata.contains("709f93ba55680ecbafb332ee95c345d6aa8ad016"));
+    assert!(metadata.contains("actions/runs/33179782126"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("4e80b44b4ea3d4820fa5e38f1e8e71aa4e33386a"));
-    assert!(generated.contains("actions/runs/33163743373"));
+    assert!(generated.contains("709f93ba55680ecbafb332ee95c345d6aa8ad016"));
+    assert!(generated.contains("actions/runs/33179782126"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -748,6 +749,39 @@ fn left_handed_klondike_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_4E80B44.md"));
     assert!(catalog.contains("0.1.0.r0.g4e80b44-1"));
+}
+
+#[test]
+fn klondike_double_click_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_709F93B.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "7feccc63f8ab05eca1fda948fd72061c9b2fca71",
+        "709f93ba55680ecbafb332ee95c345d6aa8ad016",
+        "2d92490fa78526a7f8631e6536d83775febb9460",
+        "no history was rewritten",
+        "returned PASS with zero actionable findings",
+        "actions/runs/33179782126",
+        "job/98877740992",
+        "job/98877741273",
+        "232 tests",
+        "solitaire-omarchy 0.1.0.r0.g709f93b-1",
+        "a80f3c39aa2b4c7ca9915f75291b4e35d78b24eb768e3acb543ee7bcb1a39863",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No Solitaire process existed",
+        "Nothing was enabled, summoned, focused, cycled, or restarted",
+        "authoritative `Stuff` mount was unavailable",
+        "deferred numbered-deal work remained untouched",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 709f93b publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_709F93B.md"));
+    assert!(catalog.contains("0.1.0.r0.g709f93b-1"));
 }
 
 #[test]
@@ -1823,6 +1857,68 @@ fn klondike_double_click_declares_pointer_keyboard_and_recovery_contracts() {
     }
     assert!(catalog.contains("docs/KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md"));
     assert!(catalog.contains("exact-package pointer timing, touch, AT-SPI"));
+}
+
+#[test]
+fn klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let domain = include_str!("../src/klondike.rs");
+    let evidence = include_str!("../docs/KLONDIKE_SAFE_FINISH_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "text: \"Finish safe moves\"",
+        "accessible-label: \"Move every currently safe Klondike card to a foundation\"",
+        "clicked => { root.autocomplete-requested(); }",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing safe-finish UI contract: {contract}"
+        );
+    }
+    for contract in [
+        "fn autocomplete(&mut self)",
+        "self.clear_selections();",
+        "let count = self.game.autocomplete();",
+        "Moved 1 safe card to a foundation",
+        "Moved {count} safe cards to foundations",
+        "klondike_safe_finish_is_atomic_reopenable_and_history_safe",
+        "klondike_safe_finish_conflict_preserves_both_owners_until_reload",
+        "app.on_autocomplete_requested",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing safe-finish controller contract: {contract}"
+        );
+    }
+    for contract in [
+        "while let Some(action) = self.foundation_hint()",
+        "if self.apply(action).is_err()",
+        "completed += 1",
+    ] {
+        assert!(
+            domain.contains(contract),
+            "missing safe-finish domain contract: {contract}"
+        );
+    }
+    for contract in [
+        "keyboard-focusable",
+        "bounded by the 52-card deck",
+        "write-free no-op",
+        "checked mode-0600 save",
+        "remain per card;",
+        "stale-writer test",
+        "variable-sized payload.",
+        "No production GUI or live Omarchy shell is invoked",
+        "remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing safe-finish evidence boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/KLONDIKE_SAFE_FINISH_ACCEPTANCE.md"));
+    assert!(catalog.contains("klondike_safe_finish_is_atomic_reopenable_and_history_safe"));
 }
 
 #[test]

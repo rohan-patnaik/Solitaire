@@ -201,6 +201,16 @@ Keyboard Enter/Space and
 accessibility-default activation remain immediate. See
 [`KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md`](KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md).
 
+Klondike's existing **Finish safe moves** action now clears stale card
+selection and has focused controller evidence for its exact move count, bounded
+52-card loop, write-free no-op, checked mode-0600 game/profile save, one-time
+win accounting, per-card undo/redo, loader reopen, and stale-writer recovery.
+The control accepts no variable-sized input and changes no replay or persistence
+schema. Exact-package keyboard/default-action, live-region, AT-SPI,
+spoken-output, visible multi-move, pointer/touch, and foreground acceptance
+remain open, so affected rows stay Partial. See
+[`KLONDIKE_SAFE_FINISH_ACCEPTANCE.md`](KLONDIKE_SAFE_FINISH_ACCEPTANCE.md).
+
 Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
 replay with only the exposed King of Diamonds remaining in tableau column 1.
 Production replay reconstruction and the controller's keyboard-routable final

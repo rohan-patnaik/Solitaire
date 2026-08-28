@@ -87,6 +87,13 @@ Functional parity is achievable for the five core games and common collection fe
   atomically, requires both clicks to retain one exact source/card identity, and preserves
   immediate keyboard/default activation. Exact-package pointer timing, touch,
   and AT-SPI acceptance remain open.
+- Klondike **Finish safe moves** has controller-lifecycle evidence for
+  stale-selection clearing, exact zero/one-move reporting, checked save/reopen,
+  one-time profile observation, per-card undo/redo, and stale-writer reload.
+  The existing safe-move rule and replay schema are unchanged. Exact-package
+  keyboard/default-action, live-region, AT-SPI, spoken-output, visible
+  multi-move, pointer/touch, and foreground-preservation acceptance remain
+  open, so affected rows stay Partial.
 
 ### M2 — Spider and FreeCell
 

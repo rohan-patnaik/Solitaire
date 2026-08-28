@@ -1390,8 +1390,13 @@ impl Controller {
 
     fn autocomplete(&mut self) {
         if self.active == GameKind::Klondike {
+            self.clear_selections();
             let count = self.game.autocomplete();
-            self.status = format!("Moved {count} safe cards to foundations");
+            self.status = if count == 1 {
+                "Moved 1 safe card to a foundation".into()
+            } else {
+                format!("Moved {count} safe cards to foundations")
+            };
             if count > 0 {
                 self.persist_mutation();
             }
@@ -3981,6 +3986,128 @@ mod tests {
 
         remove_save(&game_path);
         remove_save(&profile_path);
+    }
+
+    #[test]
+    fn klondike_safe_finish_is_atomic_reopenable_and_history_safe() {
+        let game_path = test_save("klondike-safe-finish");
+        let profile_path = test_save("klondike-safe-finish-profile");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        let replay: solitaire::replay::Replay<Action, solitaire::klondike::ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let staged = Game::from_replay(&replay).unwrap();
+        solitaire::persistence::save_klondike(&game_path, &staged).unwrap();
+        let (near_win, revision) = load_klondike_revisioned(&game_path).unwrap();
+
+        let mut controller = controller(0);
+        controller.game = near_win.clone();
+        controller.save_path = Some(game_path.clone());
+        controller.save_revisions[0] = Some(revision);
+        controller.local_profile_path = Some(profile_path.clone());
+        controller.selection = Some(Selection::Tableau {
+            column: 0,
+            count: 1,
+        });
+        controller.autocomplete();
+
+        assert_eq!(controller.status, "Moved 1 safe card to a foundation");
+        assert!(controller.selection.is_none());
+        assert!(controller.game.state.is_won());
+        assert_eq!(controller.game.state.card_count(), 52);
+        assert_eq!(controller.game.state.moves, 156);
+        assert!(!controller.dirty[0]);
+        assert!(!controller.local_profile_dirty);
+        let won = controller.game.clone();
+        let won_bytes = fs::read(&game_path).unwrap();
+        let profile_bytes = fs::read(&profile_path).unwrap();
+        assert_eq!(load_klondike_revisioned(&game_path).unwrap().0, won);
+        assert_eq!(
+            load_local_profile_revisioned(&profile_path)
+                .unwrap()
+                .0
+                .statistics(ProfileGameKind::Klondike),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&profile_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        controller.undo();
+        assert_eq!(controller.game.state, near_win.state);
+        assert_eq!(controller.game.replay(), near_win.replay());
+        assert!(controller.game.can_redo());
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.redo();
+        assert_eq!(controller.game, won);
+        assert_eq!(fs::read(&game_path).unwrap(), won_bytes);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        controller.selection = Some(Selection::Waste);
+        controller.autocomplete();
+        assert_eq!(controller.status, "Moved 0 safe cards to foundations");
+        assert!(controller.selection.is_none());
+        assert_eq!(controller.game, won);
+        assert_eq!(fs::read(&game_path).unwrap(), won_bytes);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+
+        let (reopened, _) = load_klondike_revisioned(&game_path).unwrap();
+        assert_eq!(reopened, won);
+        remove_save(&game_path);
+        remove_save(&profile_path);
+    }
+
+    #[test]
+    fn klondike_safe_finish_conflict_preserves_both_owners_until_reload() {
+        let path = test_save("klondike-safe-finish-conflict");
+        remove_save(&path);
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        let replay: solitaire::replay::Replay<Action, solitaire::klondike::ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let staged = Game::from_replay(&replay).unwrap();
+        solitaire::persistence::save_klondike(&path, &staged).unwrap();
+        let (near_win, revision) = load_klondike_revisioned(&path).unwrap();
+
+        let mut controller = controller(0);
+        controller.game = near_win;
+        controller.save_path = Some(path.clone());
+        controller.save_revisions[0] = Some(revision);
+        controller.selection = Some(Selection::Waste);
+
+        let external = Game::new(999, Options::default());
+        solitaire::persistence::save_klondike(&path, &external).unwrap();
+        let external_bytes = fs::read(&path).unwrap();
+        controller.autocomplete();
+
+        assert!(controller.game.state.is_won());
+        assert!(controller.selection.is_none());
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("save changed in another"));
+        assert_eq!(fs::read(&path).unwrap(), external_bytes);
+
+        controller.reload_disk_copy();
+        assert_eq!(controller.game, external);
+        assert!(!controller.dirty[0]);
+        assert!(controller.selection.is_none());
+        assert_eq!(fs::read(&path).unwrap(), external_bytes);
+        remove_save(&path);
     }
 
     fn exercise_klondike_restart_child(phase: &str) {

@@ -48,12 +48,24 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
   workflow, or double-click one to request a direct move to its suit foundation.
   Keyboard and accessibility-default activation remain immediate; stale card
   identity or position fails closed and asks for another click.
+- Use the keyboard-focusable **Finish safe moves** action to move every
+  currently safe exposed Klondike card to a foundation. It clears stale card
+  selection, reports an exact move count, persists through the normal checked
+  save/profile path, and leaves each moved card as one ordinary undoable replay
+  action. A zero-move request is a write-free no-op.
 - A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
   foundation move before victory. A bounded display-independent lifecycle gate
   starts a fresh Controller, exercises the final tableau/foundation route,
   status, atomic persistence and undo/redo, exits, then proves a second fresh
   Controller reopens byte-identical won-game and one-time profile files.
   Exact-package final-action and process/window acceptance remain open.
+
+The display-independent safe-finish lifecycle, including no-op, undo/redo,
+checked save/reopen, one-time profile observation, and stale-writer reload, is
+recorded in
+[`KLONDIKE_SAFE_FINISH_ACCEPTANCE.md`](docs/KLONDIKE_SAFE_FINISH_ACCEPTANCE.md).
+Exact-package keyboard, AT-SPI, spoken-output, and visible multi-move acceptance
+remain open.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
 
