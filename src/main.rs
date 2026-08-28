@@ -50,6 +50,9 @@ enum NewDealVariant {
     },
     Spider(SuitMode),
     FreeCell(FreeCellDeal),
+    TriPeaks {
+        wraparound: bool,
+    },
     Standard,
 }
 
@@ -1192,7 +1195,11 @@ fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVarian
         (GameKind::FreeCell, "Next numbered deal") => {
             Some(NewDealVariant::FreeCell(FreeCellDeal::Next))
         }
-        (GameKind::TriPeaks | GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
+        (GameKind::TriPeaks, "Standard") => Some(NewDealVariant::TriPeaks { wraparound: false }),
+        (GameKind::TriPeaks, "Ace-King wrap") => {
+            Some(NewDealVariant::TriPeaks { wraparound: true })
+        }
+        (GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
         _ => None,
     }
 }
@@ -1242,10 +1249,8 @@ const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bo
         (GameKind::Klondike, NewDealVariant::Klondike { .. })
             | (GameKind::Spider, NewDealVariant::Spider(_))
             | (GameKind::FreeCell, NewDealVariant::FreeCell(_))
-            | (
-                GameKind::TriPeaks | GameKind::Pyramid,
-                NewDealVariant::Standard
-            )
+            | (GameKind::TriPeaks, NewDealVariant::TriPeaks { .. })
+            | (GameKind::Pyramid, NewDealVariant::Standard)
     )
 }
 
@@ -1273,8 +1278,8 @@ fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
         (GameKind::FreeCell, NewDealVariant::FreeCell(_)) => {
             ProspectiveGame::FreeCell(FreeCellGame::new(seed))
         }
-        (GameKind::TriPeaks, NewDealVariant::Standard) => {
-            ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options::default()))
+        (GameKind::TriPeaks, NewDealVariant::TriPeaks { wraparound }) => {
+            ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options { wraparound }))
         }
         (GameKind::Pyramid, NewDealVariant::Standard) => {
             ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options::default()))
@@ -2020,6 +2025,21 @@ fn render_tripeaks(app: &AppWindow, controller: &Controller) {
     app.set_deal_number(tripeaks_deal_number(state.seed));
     app.set_redeals(0);
     app.set_redeals_remaining(0);
+    app.set_tripeaks_wraparound_active(state.options.wraparound);
+    if let Some((index, label)) = tripeaks_ui_rule_for_render(controller) {
+        app.set_tripeaks_rule_index(index);
+        app.set_tripeaks_rule_mode(label.into());
+    }
+}
+
+fn tripeaks_ui_rule_for_render(controller: &Controller) -> Option<(i32, &'static str)> {
+    controller.pending_new_deal.is_none().then_some(
+        if controller.tripeaks.state.options.wraparound {
+            (1, "Ace-King wrap")
+        } else {
+            (0, "Standard")
+        },
+    )
 }
 
 fn render_pyramid(app: &AppWindow, controller: &Controller) {
@@ -3037,6 +3057,10 @@ mod tests {
         controller.tripeaks_save_path = Some(path.clone());
         controller.new_game("Standard");
         assert!(!controller.tripeaks.state.options.wraparound);
+        assert_eq!(
+            tripeaks_ui_rule_for_render(&controller),
+            Some((0, "Standard"))
+        );
 
         match controller.tripeaks.hint().unwrap() {
             tripeaks::Action::Draw => controller.draw_tripeaks_stock(),
@@ -3050,6 +3074,99 @@ mod tests {
         assert_eq!(controller.tripeaks.state, moved);
         assert_eq!(load_tripeaks_revisioned(&path).unwrap().0.state, moved);
         remove_save(&path);
+    }
+
+    #[test]
+    fn tripeaks_wraparound_is_strict_atomic_reopenable_and_history_safe() {
+        let game_path = test_save("tripeaks-wraparound-game");
+        let counter_path = test_save("tripeaks-wraparound-counter");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+        let mut controller = controller(5);
+        controller.select_game("TriPeaks");
+        controller.tripeaks_save_path = Some(game_path.clone());
+        controller.deal_counters_path = Some(counter_path.clone());
+        assert!(controller.save());
+
+        controller.new_game("Ace-King wrap");
+        assert!(
+            controller.pending_new_deal.is_none(),
+            "{}",
+            controller.status
+        );
+        assert!(controller.tripeaks.state.options.wraparound);
+        assert_eq!(controller.tripeaks.state.seed, 6);
+        assert_eq!(
+            tripeaks_ui_rule_for_render(&controller),
+            Some((1, "Ace-King wrap"))
+        );
+        assert_eq!(
+            load_tripeaks_revisioned(&game_path).unwrap().0,
+            controller.tripeaks
+        );
+        assert_eq!(load_deal_counters(&counter_path).unwrap().tripeaks, 7);
+
+        let waste_rank = controller.tripeaks.state.waste.last().unwrap().rank;
+        let boundary_rank = controller.tripeaks.state.tableau[21].unwrap().rank;
+        assert!(matches!(
+            (waste_rank, boundary_rank),
+            (Rank::Ace, Rank::King) | (Rank::King, Rank::Ace)
+        ));
+        controller.activate_tripeaks_card(21);
+        assert!(controller.tripeaks.state.tableau[21].is_none());
+        assert_eq!(controller.tripeaks.state.moves, 1);
+        let moved = controller.tripeaks.clone();
+        controller.undo();
+        assert!(controller.tripeaks.can_redo());
+        controller.redo();
+        assert_eq!(controller.tripeaks, moved);
+        assert!(controller.tripeaks.state.options.wraparound);
+        assert_eq!(load_tripeaks_revisioned(&game_path).unwrap().0, moved);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&counter_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        controller.dirty[3] = true;
+        controller.new_game("Standard");
+        let pending = controller.pending_new_deal;
+        assert!(pending.is_some());
+        assert_eq!(tripeaks_ui_rule_for_render(&controller), None);
+        let preserved_game = controller.tripeaks.clone();
+        let preserved_save = fs::read(&game_path).unwrap();
+        let preserved_counters = fs::read(&counter_path).unwrap();
+        let oversized = "W".repeat(4_096);
+        for invalid in [
+            "",
+            "standard",
+            " Standard",
+            "Standard ",
+            "Ace King wrap",
+            "Ace-King wrap ",
+            "Ace-King wrap · trailing",
+            oversized.as_str(),
+        ] {
+            controller.new_game(invalid);
+            assert_eq!(controller.tripeaks, preserved_game, "{invalid:?}");
+            assert!(controller.pending_new_deal == pending, "{invalid:?}");
+            assert_eq!(fs::read(&game_path).unwrap(), preserved_save, "{invalid:?}");
+            assert_eq!(
+                fs::read(&counter_path).unwrap(),
+                preserved_counters,
+                "{invalid:?}"
+            );
+            assert_eq!(
+                controller.status,
+                "Invalid new-deal options; current game preserved"
+            );
+        }
+
+        remove_save(&game_path);
+        remove_save(&counter_path);
     }
 
     #[test]

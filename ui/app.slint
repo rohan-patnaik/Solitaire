@@ -152,6 +152,9 @@ export component AppWindow inherits Window {
     in-out property <int> klondike-scoring-index: 0;
     in-out property <string> klondike-redeal-limit: "Unlimited";
     in-out property <int> klondike-redeal-index: 0;
+    in-out property <string> tripeaks-rule-mode: "Standard";
+    in-out property <int> tripeaks-rule-index: 0;
+    in property <bool> tripeaks-wraparound-active: false;
     in-out property <string> freecell-deal-number-entry: "";
 
     callback select-game(string);
@@ -229,6 +232,7 @@ export component AppWindow inherits Window {
                         ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-number
                         : (root.game-kind == "TriPeaks"
                             ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number
+                                + "     Rule  " + (root.tripeaks-wraparound-active ? "Ace-King wrap" : "Standard")
                             : (root.game-kind == "Pyramid"
                                 ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number + "     Redeals  " + root.redeals
                                 : "Score  " + root.score + "     Moves  " + root.moves + "     Redeals  " + root.redeals
@@ -250,10 +254,21 @@ export component AppWindow inherits Window {
                     clicked => { root.new-game(spider-mode.current-value); }
                 }
             }
-            if root.game-kind == "TriPeaks": Button {
-                text: "New deal";
-                accessible-label: "Start the next standard TriPeaks deal";
-                clicked => { root.new-game("Standard"); }
+            if root.game-kind == "TriPeaks": HorizontalBox {
+                spacing: 8px;
+                tripeaks-rule := ComboBox {
+                    model: ["Standard", "Ace-King wrap"];
+                    current-value <=> root.tripeaks-rule-mode;
+                    current-index <=> root.tripeaks-rule-index;
+                    enabled: !root.has-pending-new-deal;
+                    accessible-label: "Rank rule for a new TriPeaks deal";
+                }
+                Button {
+                    text: "New deal";
+                    enabled: !root.has-pending-new-deal;
+                    accessible-label: "Start the next TriPeaks deal with the selected rank rule";
+                    clicked => { root.new-game(root.tripeaks-rule-mode); }
+                }
             }
             if root.game-kind == "Pyramid": Button {
                 text: "New deal";
@@ -408,7 +423,9 @@ export component AppWindow inherits Window {
                     : (root.game-kind == "FreeCell"
                         ? "Use four free cells to build alternating cascades and ascending suit foundations."
                         : (root.game-kind == "TriPeaks"
-                            ? "Standard TriPeaks uses no rank wraparound. All play stays on this device."
+                            ? (root.tripeaks-wraparound-active
+                                ? "TriPeaks Ace-King wrap treats Ace and King as adjacent. All play stays on this device."
+                                : "Standard TriPeaks uses no rank wraparound. All play stays on this device.")
                             : (root.game-kind == "Pyramid"
                                 ? "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device."
                                 : "Choose a face-up card or run, then choose its destination. All play stays on this device."))));

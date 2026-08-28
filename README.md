@@ -13,7 +13,7 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 ## Status
 
-This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and standard TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell can open an explicit repository-defined decimal deal number or advance to the next one, while Pyramid and TriPeaks expose sequential deterministic deals. These numbers reproduce this repository's generator and are not a claim of compatibility with another product's deal numbering. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
+This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and Standard plus optional Ace-King-wrap TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell can open an explicit repository-defined decimal deal number or advance to the next one, while Pyramid and TriPeaks expose sequential deterministic deals. These numbers reproduce this repository's generator and are not a claim of compatibility with another product's deal numbering. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
 See the [alpha install, demonstrated workflows, privacy boundary, and known limits](docs/ALPHA_RELEASE.md). Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md).
 
@@ -65,7 +65,11 @@ The active game's local statistics count a deal as played on its first successfu
   before victory and exercises final selection/pair routing, status, atomic
   save/reopen, undo/redo, and one-time local played/won accounting.
   Exact-package final-action acceptance remains open.
-- In standard TriPeaks, activate an exposed tableau card one rank above or below the waste, without King/Ace wraparound, or activate the stock/waste control to draw. The original four-row layout exposes deal, stock, waste, streak score, move count, hints, and win status without copying vendor presentation.
+- In TriPeaks, choose Standard adjacency or the optional Ace-King wrap rule for
+  a new deal. Activate an exposed tableau card one rank above or below the
+  waste, or activate the stock/waste control to draw. The original four-row
+  layout exposes the active rule, deal, stock, waste, streak score, move count,
+  hints, and win status without copying vendor presentation.
 - A checked-in normal seed-zero TriPeaks replay reconstructs to one legal move
   before victory and exercises the final status, atomic save/reopen, undo/redo,
   and one-time local played/won accounting. Exact-package final-action

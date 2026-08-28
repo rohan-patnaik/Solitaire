@@ -63,12 +63,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
     assert!(metadata.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
-    assert!(metadata.contains("actions/runs/33125817274"));
+    assert!(metadata.contains("a72f3ce093fbabfd02a64bdc6680b0fff30652c1"));
+    assert!(metadata.contains("actions/runs/33128758547"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
-    assert!(generated.contains("actions/runs/33125817274"));
+    assert!(generated.contains("a72f3ce093fbabfd02a64bdc6680b0fff30652c1"));
+    assert!(generated.contains("actions/runs/33128758547"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -346,6 +347,70 @@ fn klondike_redeal_limit_candidate_is_pinned_without_overclaim() {
     assert!(ui.contains("current-index <=> root.klondike-redeal-index"));
     assert!(ui.contains("accessible-label: \"Stock redeal limit for a new Klondike deal\""));
     assert!(ui.contains("root.redeals-remaining < 0 ? \" / unlimited\""));
+}
+
+#[test]
+fn klondike_redeal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_A72F3CE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "a72f3ce093fbabfd02a64bdc6680b0fff30652c1",
+        "57b8dc6e223f0fdf9590ae7893c84253bfa168dc",
+        "fc49a07d0795f8ec52c58feb84cb26e55504e675",
+        "actions/runs/33128758547",
+        "job/98713067551",
+        "job/98713067274",
+        "solitaire-omarchy 0.1.0.r0.ga72f3ce-1",
+        "signed off with no actionable findings",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing a72f3ce publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_A72F3CE.md"));
+    assert!(catalog.contains("0.1.0.r0.ga72f3ce-1"));
+}
+
+#[test]
+fn tripeaks_wraparound_candidate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/TRIPEAKS_WRAPAROUND_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "Standard` and `Ace-King wrap",
+        "replay and save schema shapes are",
+        "published build through",
+        "rejected `wraparound: true`",
+        "quarantines that save",
+        "preserves the source bytes",
+        "Standard saves remain",
+        "tripeaks_wraparound_is_strict_atomic_reopenable_and_history_safe",
+        "wraparound_tripeaks_checked_save_reopens_equivalent",
+        "wraparound_tripeaks_setup_is_accepted_and_preserved",
+        "4 KiB hostile rule requests",
+        "continuously preserve the user's active application",
+        "rows Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing TriPeaks wraparound boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("tripeaks_wraparound_is_strict_atomic_reopenable_and_history_safe"));
+    assert!(catalog.contains("The exact installed final transition and rule-selection"));
+    assert!(catalog.contains("Published builds through a72f3ce reject and quarantine"));
+    assert!(controller.contains("(GameKind::TriPeaks, \"Ace-King wrap\")"));
+    assert!(controller.contains("fn tripeaks_ui_rule_for_render"));
+    assert!(ui.contains("model: [\"Standard\", \"Ace-King wrap\"]"));
+    assert!(ui.contains("current-index <=> root.tripeaks-rule-index"));
+    assert!(ui.contains("accessible-label: \"Rank rule for a new TriPeaks deal\""));
+    assert!(ui.contains("root.tripeaks-wraparound-active"));
 }
 
 #[test]
@@ -965,8 +1030,12 @@ fn tripeaks_surface_declares_keyboard_and_accessibility_contracts() {
         "model: [\"Klondike\", \"Spider\", \"FreeCell\", \"Pyramid\", \"TriPeaks\"]",
         "callback tripeaks-draw-stock",
         "callback tripeaks-tableau-activated",
-        "Start the next standard TriPeaks deal",
+        "Start the next TriPeaks deal with the selected rank rule",
+        "Rank rule for a new TriPeaks deal",
+        "model: [\"Standard\", \"Ace-King wrap\"]",
+        "current-index <=> root.tripeaks-rule-index",
         "Standard TriPeaks uses no rank wraparound",
+        "TriPeaks Ace-King wrap treats Ace and King as adjacent",
         "accessible-action-default => { root.activated(); }",
         "accessible-live-region: polite",
     ] {

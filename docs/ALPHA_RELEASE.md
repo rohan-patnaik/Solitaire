@@ -2,9 +2,9 @@
 
 Solitaire is an offline-first native Linux alpha for Omarchy Quattro. The
 current scope is playable Klondike, Spider, FreeCell, standard Pyramid, and
-standard TriPeaks. It is not a Complete/Verified Microsoft Solitaire
-Collection replacement. Exactly one applicable capability row is Complete: the
-detached Omarchy launcher. All other applicable rows remain Partial.
+Standard plus optional Ace-King-wrap TriPeaks. It is not a Complete/Verified
+Microsoft Solitaire Collection replacement. Exactly one applicable capability row is Complete:
+the detached Omarchy launcher. All other applicable rows remain Partial.
 
 ## Install the exact accepted Arch package
 
@@ -72,7 +72,17 @@ played/won observation, undo/redo idempotence, and loader-level reopen. This is
 candidate evidence; exact installed final-action acceptance remains open. See
 [`PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md`](PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md).
 
-TriPeaks deal zero now has a checked-in normal replay with 48 legal actions and
+TriPeaks offers Standard adjacency and an optional Ace-King wrap rule through a
+keyboard/accessibility-declared new-deal control. The existing serialized
+option survives atomic checked save/reopen and undo/redo; strict malformed and
+hostile requests preserve game, save, counters, and pending state. Exact-package
+selection and Ace/King input remain open. Although the serialized schema shape
+is unchanged, published builds through `a72f3ce` reject and quarantine a
+wrap-enabled save while preserving its source bytes and opening a fresh deal;
+do not use those builds to open such a save. See
+[`TRIPEAKS_WRAPAROUND_ACCEPTANCE.md`](TRIPEAKS_WRAPAROUND_ACCEPTANCE.md).
+
+TriPeaks deal zero has a checked-in normal Standard replay with 48 legal actions and
 one exposed tableau card remaining. Production replay reconstruction and the
 controller's keyboard-routable final action prove the complete status, score,
 0600 game/profile persistence, exact one-time played/won observation,
@@ -176,9 +186,9 @@ package files.
   Klondike, FreeCell, TriPeaks, and Pyramid complete-deal transcripts plus the
   normal one-suit Spider transcript now prove all five final controller
   lifecycles, but the installed win transitions,
-  full rule variants, broader hostile/property tests, drag/touch behavior,
-  solver-grade FreeCell hints, Pyramid solvability metadata, and optional
-  TriPeaks modes remain incomplete or unverified.
+  remaining rule variants, broader hostile/property tests, drag/touch behavior,
+  solver-grade FreeCell hints, Pyramid solvability metadata, and installed
+  TriPeaks rule selection remain incomplete or unverified.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
 - Long malformed-save and conflict messages use a dedicated full-width,
