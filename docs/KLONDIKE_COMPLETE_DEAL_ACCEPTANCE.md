@@ -38,6 +38,21 @@ used by keyboard, pointer, and assistive-technology default actions. It proves:
 - no duplicate profile write across undo, redo, or repeated observation; and
 - loader-level exact reopen of the won game and profile bytes.
 
+`klondike_complete_deal_survives_normal_controller_restart` extends that
+coverage across two fresh source processes. The parent reconstructs the fixture
+through production code and atomically writes the normal Klondike save format.
+The first child starts a fresh `Controller`, completes the keyboard-routable
+final move, verifies undo/redo and the exact one-time profile, and exits. The
+second child starts another fresh `Controller` and proves the won game and
+profile reopen byte-for-byte. Each child first verifies that `XDG_DATA_HOME`
+matches a parent-created canonical temporary root beneath the system temporary
+directory and that its mode-0600 PID/nanosecond nonce marker matches. Every
+phase has a ten-second monotonic deadline; a stalled child is killed and reaped,
+and captured diagnostics are bounded to 8 KiB per stream.
+
+This is display-independent source-process lifecycle evidence. It is not the
+installed process/window identity or final input gate below.
+
 ## Remaining installed gate
 
 After publication and exact-SHA package CI, an input-capable offscreen

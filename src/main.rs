@@ -2961,6 +2961,108 @@ mod tests {
         remove_save(&profile_path);
     }
 
+    fn exercise_klondike_restart_child(phase: &str) {
+        let mut restarted = Controller::new();
+        assert_eq!(
+            restarted.game.state.seed, 0,
+            "fresh Controller did not reopen the pinned fixture: {}",
+            restarted.status
+        );
+        assert_eq!(restarted.game.state.options, Options::default());
+        assert!(restarted.pending_new_deal.is_none());
+        assert!(!restarted.dirty[restarted.active_index()]);
+
+        if phase == "complete" {
+            assert!(!restarted.game.state.is_won());
+            assert_eq!(restarted.game.state.moves, 155);
+            assert_eq!(
+                restarted
+                    .local_profile
+                    .statistics(ProfileGameKind::Klondike),
+                solitaire::profile::GameStatistics::default()
+            );
+            restarted.activate_tableau(0, 0);
+            restarted.activate_foundation(1);
+            assert_eq!(restarted.status, "Deal complete — beautifully played");
+            assert!(restarted.game.state.is_won());
+            restarted.undo();
+            assert!(!restarted.game.state.is_won());
+            restarted.redo();
+            assert!(restarted.game.state.is_won());
+            return;
+        }
+
+        assert_eq!(phase, "reopen");
+        assert!(restarted.game.state.is_won());
+        assert_eq!(restarted.game.state.moves, 156);
+        assert_eq!(restarted.game.state.score, 365);
+        assert_eq!(
+            restarted
+                .local_profile
+                .statistics(ProfileGameKind::Klondike),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        restarted.observe_active_profile();
+    }
+
+    #[test]
+    fn klondike_complete_deal_survives_normal_controller_restart() {
+        const PHASE: &str = "SOLITAIRE_KLONDIKE_RESTART_PHASE";
+        const ROOT: &str = "SOLITAIRE_KLONDIKE_RESTART_ROOT";
+        const TOKEN: &str = "SOLITAIRE_KLONDIKE_RESTART_TOKEN";
+        if let Ok(phase) = std::env::var(PHASE) {
+            validate_restart_child_root(ROOT, TOKEN);
+            exercise_klondike_restart_child(&phase);
+            return;
+        }
+
+        let (root, token, marker) = create_restart_root("klondike");
+        let data = root.join("solitaire");
+        let game_path = data.join("klondike-save.json");
+        let profile_path = data.join("local-profile.json");
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        let replay: solitaire::replay::Replay<Action, solitaire::klondike::ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let staged = Game::from_replay(&replay).unwrap();
+        solitaire::persistence::save_klondike(&game_path, &staged).unwrap();
+
+        run_restart_phase(
+            &root,
+            "complete",
+            &token,
+            "tests::klondike_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        let completed_save = fs::read(&game_path).unwrap();
+        let completed_profile = fs::read(&profile_path).unwrap();
+        assert!(
+            load_klondike_revisioned(&game_path)
+                .unwrap()
+                .0
+                .state
+                .is_won()
+        );
+
+        run_restart_phase(
+            &root,
+            "reopen",
+            &token,
+            "tests::klondike_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        assert_eq!(fs::read(&game_path).unwrap(), completed_save);
+        assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
+        cleanup_restart_root(&root, &marker);
+    }
+
     #[test]
     fn controller_completes_legal_spider_replay_once_and_reopens() {
         let game_path = test_save("spider-near-win");
@@ -3120,17 +3222,75 @@ mod tests {
         String::from_utf8_lossy(&bytes[..bytes.len().min(DIAGNOSTIC_LIMIT)]).into_owned()
     }
 
-    fn run_spider_restart_phase(root: &Path, phase: &str, token: &str) {
+    fn validate_restart_child_root(root_variable: &str, token_variable: &str) -> PathBuf {
+        let isolated_root = PathBuf::from(std::env::var_os(root_variable).unwrap());
+        let token = std::env::var(token_variable).unwrap();
+        assert_eq!(
+            std::env::var_os("XDG_DATA_HOME"),
+            Some(isolated_root.clone().into())
+        );
+        assert!(isolated_root.is_absolute());
+        assert!(
+            fs::canonicalize(&isolated_root)
+                .unwrap()
+                .starts_with(fs::canonicalize(std::env::temp_dir()).unwrap())
+        );
+        let marker = isolated_root.join(".restart-token");
+        let metadata = fs::symlink_metadata(&marker).unwrap();
+        assert!(metadata.file_type().is_file());
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(fs::read_to_string(marker).unwrap(), token);
+        isolated_root
+    }
+
+    fn create_restart_root(game: &str) -> (PathBuf, String, PathBuf) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let token = format!("{}-{nonce}", std::process::id());
+        let root = std::env::temp_dir().join(format!(
+            "solitaire-controller-{}-{nonce}-{game}-restart",
+            std::process::id(),
+        ));
+        fs::create_dir_all(root.join("solitaire")).unwrap();
+        let marker = root.join(".restart-token");
+        fs::write(&marker, &token).unwrap();
+        fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
+        (root, token, marker)
+    }
+
+    fn cleanup_restart_root(root: &Path, marker: &Path) {
+        let data = root.join("solitaire");
+        for name in [
+            "klondike-save.json",
+            "spider-save.json",
+            "freecell-save.json",
+            "tripeaks-save.json",
+            "pyramid-save.json",
+            "deal-counters.json",
+            "local-profile.json",
+        ] {
+            remove_save(&data.join(name));
+        }
+        remove_save(marker);
+        let _ = fs::remove_dir(&data);
+        let _ = fs::remove_dir(root);
+    }
+
+    fn run_restart_phase(
+        root: &Path,
+        phase: &str,
+        token: &str,
+        test_name: &str,
+        environment: [&str; 3],
+    ) {
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "tests::spider_complete_deal_survives_normal_controller_restart",
-                "--exact",
-                "--nocapture",
-            ])
+            .args([test_name, "--exact", "--nocapture"])
             .env("XDG_DATA_HOME", root)
-            .env("SOLITAIRE_SPIDER_RESTART_PHASE", phase)
-            .env("SOLITAIRE_SPIDER_RESTART_ROOT", root)
-            .env("SOLITAIRE_SPIDER_RESTART_TOKEN", token)
+            .env(environment[0], phase)
+            .env(environment[1], root)
+            .env(environment[2], token)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -3166,43 +3326,15 @@ mod tests {
         const CHILD_ROOT: &str = "SOLITAIRE_SPIDER_RESTART_ROOT";
         const CHILD_TOKEN: &str = "SOLITAIRE_SPIDER_RESTART_TOKEN";
         if let Ok(phase) = std::env::var(CHILD_PHASE) {
-            let isolated_root = PathBuf::from(std::env::var_os(CHILD_ROOT).unwrap());
-            let token = std::env::var(CHILD_TOKEN).unwrap();
-            assert_eq!(
-                std::env::var_os("XDG_DATA_HOME"),
-                Some(isolated_root.clone().into())
-            );
-            assert!(isolated_root.is_absolute());
-            assert!(
-                fs::canonicalize(&isolated_root)
-                    .unwrap()
-                    .starts_with(fs::canonicalize(std::env::temp_dir()).unwrap())
-            );
-            let marker = isolated_root.join(".spider-restart-token");
-            assert!(fs::symlink_metadata(&marker).unwrap().file_type().is_file());
-            assert_eq!(fs::read_to_string(marker).unwrap(), token);
+            validate_restart_child_root(CHILD_ROOT, CHILD_TOKEN);
             exercise_spider_restart_child(&phase);
             return;
         }
 
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let token = format!("{}-{nonce}", std::process::id());
-        let root = std::env::temp_dir().join(format!(
-            "solitaire-controller-{}-{nonce}-spider-restart",
-            std::process::id(),
-        ));
+        let (root, token, marker) = create_restart_root("spider");
         let data = root.join("solitaire");
         let game_path = data.join("spider-save.json");
         let profile_path = data.join("local-profile.json");
-        remove_save(&game_path);
-        remove_save(&profile_path);
-        fs::create_dir_all(&data).unwrap();
-        let marker = root.join(".spider-restart-token");
-        fs::write(&marker, &token).unwrap();
-        fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
         fs::write(
             &game_path,
             include_bytes!("../tests/fixtures/spider-one-suit-near-win.json"),
@@ -3210,7 +3342,13 @@ mod tests {
         .unwrap();
         fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
 
-        run_spider_restart_phase(&root, "complete", &token);
+        run_restart_phase(
+            &root,
+            "complete",
+            &token,
+            "tests::spider_complete_deal_survives_normal_controller_restart",
+            [CHILD_PHASE, CHILD_ROOT, CHILD_TOKEN],
+        );
         let completed_save = fs::read(&game_path).unwrap();
         let completed_profile = fs::read(&profile_path).unwrap();
         assert!(load_spider_revisioned(&game_path).unwrap().0.state.is_won());
@@ -3227,7 +3365,13 @@ mod tests {
             }
         );
 
-        run_spider_restart_phase(&root, "reopen", &token);
+        run_restart_phase(
+            &root,
+            "reopen",
+            &token,
+            "tests::spider_complete_deal_survives_normal_controller_restart",
+            [CHILD_PHASE, CHILD_ROOT, CHILD_TOKEN],
+        );
         assert_eq!(fs::read(&game_path).unwrap(), completed_save);
         assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
         for path in [&game_path, &profile_path] {
@@ -3237,20 +3381,7 @@ mod tests {
             );
         }
 
-        for name in [
-            "klondike-save.json",
-            "spider-save.json",
-            "freecell-save.json",
-            "tripeaks-save.json",
-            "pyramid-save.json",
-            "deal-counters.json",
-            "local-profile.json",
-        ] {
-            remove_save(&data.join(name));
-        }
-        remove_save(&marker);
-        let _ = fs::remove_dir(&data);
-        let _ = fs::remove_dir(&root);
+        cleanup_restart_root(&root, &marker);
     }
 
     #[test]

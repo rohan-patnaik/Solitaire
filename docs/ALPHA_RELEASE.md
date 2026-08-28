@@ -154,8 +154,11 @@ replay with only the exposed King of Diamonds remaining in tableau column 1.
 Production replay reconstruction and the controller's keyboard-routable final
 foundation move prove the complete status, score, 0600 game/profile
 persistence, exact one-time played/won observation, undo/redo idempotence, and
-loader-level reopen. This is candidate evidence; exact installed final-action
-acceptance remains open. See
+loader-level reopen. A bounded display-independent process gate additionally
+completes the deal through a fresh Controller, exits, and proves a second fresh
+Controller reopens byte-identical won-game and one-time profile files from a
+validated temporary root and nonce. This is source-process candidate evidence;
+exact installed final-action and process/window acceptance remain open. See
 [`KLONDIKE_COMPLETE_DEAL_ACCEPTANCE.md`](KLONDIKE_COMPLETE_DEAL_ACCEPTANCE.md).
 
 At published revision `4b31024426b73fafe93597e4cd42312eef2b26b0`

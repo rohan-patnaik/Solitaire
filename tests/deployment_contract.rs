@@ -66,12 +66,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
     assert!(metadata.contains("fa15999d04876160337bd13c0126b20e78873132"));
     assert!(metadata.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
-    assert!(metadata.contains("actions/runs/33134886017"));
+    assert!(metadata.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
+    assert!(metadata.contains("actions/runs/33136360301"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
-    assert!(generated.contains("actions/runs/33134886017"));
+    assert!(generated.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
+    assert!(generated.contains("actions/runs/33136360301"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -128,7 +129,7 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
     assert!(catalog.contains("klondike_new_deal_choices_are_saved_and_reopen_with_exact_options"));
     assert!(
         catalog.contains(
-            "The Vegas and redeal-limit UI workflows and exact installed final foundation move remain open"
+            "The Vegas and redeal-limit UI workflows and exact installed final foundation move/process identity remain open"
         )
     );
     assert!(release.contains("both scoring modes remain untimed"));
@@ -171,7 +172,7 @@ fn klondike_vegas_publication_gate_is_pinned_without_overclaim() {
     assert!(catalog.contains("docs/PUBLICATION_C22C173.md"));
     assert!(
         catalog.contains(
-            "The Vegas and redeal-limit UI workflows and exact installed final foundation move remain open"
+            "The Vegas and redeal-limit UI workflows and exact installed final foundation move/process identity remain open"
         )
     );
 }
@@ -497,6 +498,34 @@ fn spider_selector_publication_gate_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn spider_restart_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_9DCA631.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b",
+        "b4224998eb94b5b81edf65bfdc9fd29c89becaa5",
+        "ba97d08268923f037a1c32e9cc48d81b3a2442e7",
+        "actions/runs/33136360301",
+        "job/98737098834",
+        "job/98737098996",
+        "solitaire-omarchy 0.1.0.r0.g9dca631-1",
+        "ten-second monotonic deadline",
+        "signed off with no",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 9dca631 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_9DCA631.md"));
+    assert!(catalog.contains("0.1.0.r0.g9dca631-1"));
+}
+
+#[test]
 fn spider_suit_selector_candidate_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/SPIDER_SUIT_SELECTOR_ACCEPTANCE.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -624,8 +653,12 @@ fn klondike_complete_deal_candidate_is_pinned_without_overclaim() {
         "King of Diamonds in tableau column 1",
         "action 156 and wins at score",
         "controller_completes_legal_klondike_replay_once_and_reopens",
+        "klondike_complete_deal_survives_normal_controller_restart",
         "Deal complete — beautifully played",
         "exactly one played and one won",
+        "two fresh source processes",
+        "ten-second monotonic deadline",
+        "8 KiB per stream",
         "continuously preserves the active desktop",
         "rows Partial",
     ] {
@@ -637,11 +670,12 @@ fn klondike_complete_deal_candidate_is_pinned_without_overclaim() {
     for test in [
         "legal_seed_zero_replay_reaches_a_one_move_near_win",
         "controller_completes_legal_klondike_replay_once_and_reopens",
+        "klondike_complete_deal_survives_normal_controller_restart",
         "klondike_complete_deal_candidate_is_pinned_without_overclaim",
     ] {
         assert!(catalog.contains(test), "missing Klondike evidence: {test}");
     }
-    assert!(catalog.contains("exact installed final foundation move"));
+    assert!(catalog.contains("exact installed final foundation move/process identity"));
     assert!(controller.contains("Deal complete — beautifully played"));
     assert!(ui.contains("callback tableau-activated(int, int)"));
     assert!(ui.contains("callback foundation-activated(int)"));

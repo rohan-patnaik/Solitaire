@@ -38,9 +38,11 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
   awards five points per foundation card. The current redeal count and bounded
   remainder stay visible; timed play is not yet exposed.
 - A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
-  foundation move before victory and exercises the final tableau/foundation
-  route, status, atomic save/reopen, undo/redo, and one-time local played/won
-  accounting. Exact-package final-action acceptance remains open.
+  foundation move before victory. A bounded display-independent lifecycle gate
+  starts a fresh Controller, exercises the final tableau/foundation route,
+  status, atomic persistence and undo/redo, exits, then proves a second fresh
+  Controller reopens byte-identical won-game and one-time profile files.
+  Exact-package final-action and process/window acceptance remain open.
 
 Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `~/.local/share/solitaire`, and restored at startup.
 
