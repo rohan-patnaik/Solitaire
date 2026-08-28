@@ -65,12 +65,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
     assert!(metadata.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
     assert!(metadata.contains("fa15999d04876160337bd13c0126b20e78873132"));
-    assert!(metadata.contains("actions/runs/33133432510"));
+    assert!(metadata.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
+    assert!(metadata.contains("actions/runs/33134886017"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("fa15999d04876160337bd13c0126b20e78873132"));
-    assert!(generated.contains("actions/runs/33133432510"));
+    assert!(generated.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
+    assert!(generated.contains("actions/runs/33134886017"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -469,6 +470,33 @@ fn pyramid_redeal_publication_gate_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn spider_selector_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_2EBBE7E.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "2ebbe7edaa0beb04588ead7897e38ecd35a70648",
+        "fa15999d04876160337bd13c0126b20e78873132",
+        "a67f4a0a7b0c5d3bc149558b8ea00322c22971f5",
+        "actions/runs/33134886017",
+        "job/98732525776",
+        "job/98732525616",
+        "solitaire-omarchy 0.1.0.r0.g2ebbe7e-1",
+        "signed off with no actionable findings",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 2ebbe7e publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_2EBBE7E.md"));
+    assert!(catalog.contains("0.1.0.r0.g2ebbe7e-1"));
+}
+
+#[test]
 fn spider_suit_selector_candidate_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/SPIDER_SUIT_SELECTOR_ACCEPTANCE.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -738,7 +766,7 @@ fn spider_hostile_property_coverage_is_catalogued_without_overclaim() {
         )
     );
     assert!(catalog.contains(
-        "Exact-package reopened selector value/index synchronization, final transition, normal Controller startup/reopen, and drag/touch remain open."
+        "Exact-package reopened selector value/index synchronization, final transition/process identity, and drag/touch remain open."
     ));
     assert!(roadmap.contains(
         "Spider's dependency-free hostile-action and fixed seed/mode action-space tests"
@@ -760,7 +788,9 @@ fn assert_spider_complete_deal_acceptance_contract(evidence: &str) {
         "Column 0 is exactly Ten, Nine, Eight, Seven, Six",
         "Five, Four, Three, Two, Ace; column 2 is exactly King, Queen, Jack.",
         "production persistence loaders",
-        "does not exercise installed `Controller`",
+        "starts a fresh normal `Controller`",
+        "starts another fresh `Controller`",
+        "not an installed process/window identity check",
         "`HEAD == origin/main ==` the recorded full",
         "terminal success is recorded",
         "exact-head",
@@ -844,6 +874,7 @@ fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
     for test in [
         "legal_one_suit_replay_reaches_a_one_move_near_win",
         "controller_completes_legal_spider_replay_once_and_reopens",
+        "spider_complete_deal_survives_normal_controller_restart",
         "spider_complete_deal_candidate_is_pinned_without_overclaim",
     ] {
         assert!(catalog.contains(test), "missing Spider evidence: {test}");
@@ -854,7 +885,7 @@ fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
         )
     );
     assert!(catalog.contains(
-        "Exact-package reopened selector value/index synchronization, final transition, normal Controller startup/reopen, and drag/touch remain open."
+        "Exact-package reopened selector value/index synchronization, final transition/process identity, and drag/touch remain open."
     ));
     assert!(controller.contains("Spider complete — all eight runs are home"));
     assert!(ui.contains("callback spider-tableau-activated(int, int)"));

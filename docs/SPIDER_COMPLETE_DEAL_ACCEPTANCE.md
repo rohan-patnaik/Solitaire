@@ -36,9 +36,12 @@ manually entered all 118 setup actions through the UI. Acceptance covers the
 ordinary installed final transition from a complete legal transcript.
 
 The focused controller test reopens the saved game and profile through the
-production persistence loaders. It does not exercise installed `Controller`
-startup. The clean installed-process close and startup/reopen below remains a
-mandatory runtime gate.
+production persistence loaders. A separate display-independent subprocess test
+now starts a fresh normal `Controller`, completes the final move, exercises
+undo/redo, exits, starts another fresh `Controller`, and proves the exact won
+game and one-time profile reopen byte-for-byte. This is source-process lifecycle
+evidence, not an installed process/window identity check. The clean installed-
+process close and startup/reopen below remains a mandatory runtime gate.
 
 ## Exact-package Wayland gate
 

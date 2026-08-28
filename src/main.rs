@@ -3065,6 +3065,139 @@ mod tests {
         remove_save(&profile_path);
     }
 
+    fn exercise_spider_restart_child(phase: &str) {
+        let mut restarted = Controller::new();
+        restarted.select_game("Spider");
+        assert_eq!(restarted.spider.state.seed, 3);
+        assert_eq!(restarted.spider.state.mode, SuitMode::One);
+        assert_eq!(spider_ui_mode_for_render(&restarted), Some((0, "1 suit")));
+        assert!(restarted.pending_new_deal.is_none());
+        assert!(!restarted.dirty[restarted.active_index()]);
+
+        if phase == "complete" {
+            assert_eq!(restarted.spider.state.completed_runs, 7);
+            assert!(!restarted.spider.state.is_won());
+            assert_eq!(
+                restarted.local_profile.statistics(ProfileGameKind::Spider),
+                solitaire::profile::GameStatistics::default()
+            );
+            restarted.activate_spider_tableau(0, 0);
+            restarted.activate_spider_tableau(2, 0);
+            assert_eq!(
+                restarted.status,
+                "Spider complete — all eight runs are home"
+            );
+            assert!(restarted.spider.state.is_won());
+            restarted.undo();
+            assert_eq!(restarted.spider.state.completed_runs, 7);
+            restarted.redo();
+            assert!(restarted.spider.state.is_won());
+            return;
+        }
+
+        assert_eq!(phase, "reopen");
+        assert!(restarted.spider.state.is_won());
+        assert_eq!(restarted.spider.state.completed_runs, 8);
+        assert_eq!(restarted.spider.state.score, 1_181);
+        assert_eq!(restarted.spider.state.moves, 119);
+        assert_eq!(
+            restarted.local_profile.statistics(ProfileGameKind::Spider),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(3),
+                latest_won_deal: Some(3),
+            }
+        );
+        restarted.observe_active_profile();
+    }
+
+    #[test]
+    fn spider_complete_deal_survives_normal_controller_restart() {
+        const CHILD_PHASE: &str = "SOLITAIRE_SPIDER_RESTART_PHASE";
+        if let Ok(phase) = std::env::var(CHILD_PHASE) {
+            exercise_spider_restart_child(&phase);
+            return;
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "solitaire-controller-{}-spider-restart",
+            std::process::id()
+        ));
+        let data = root.join("solitaire");
+        let game_path = data.join("spider-save.json");
+        let profile_path = data.join("local-profile.json");
+        remove_save(&game_path);
+        remove_save(&profile_path);
+        fs::create_dir_all(&data).unwrap();
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/spider-one-suit-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let run_phase = |phase: &str| {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "tests::spider_complete_deal_survives_normal_controller_restart",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env("XDG_DATA_HOME", &root)
+                .env(CHILD_PHASE, phase)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{phase} child stdout: {}\n{phase} child stderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+
+        run_phase("complete");
+        let completed_save = fs::read(&game_path).unwrap();
+        let completed_profile = fs::read(&profile_path).unwrap();
+        assert!(load_spider_revisioned(&game_path).unwrap().0.state.is_won());
+        assert_eq!(
+            load_local_profile_revisioned(&profile_path)
+                .unwrap()
+                .0
+                .statistics(ProfileGameKind::Spider),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(3),
+                latest_won_deal: Some(3),
+            }
+        );
+
+        run_phase("reopen");
+        assert_eq!(fs::read(&game_path).unwrap(), completed_save);
+        assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
+        for path in [&game_path, &profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        for name in [
+            "klondike-save.json",
+            "spider-save.json",
+            "freecell-save.json",
+            "tripeaks-save.json",
+            "pyramid-save.json",
+            "deal-counters.json",
+            "local-profile.json",
+        ] {
+            remove_save(&data.join(name));
+        }
+        let _ = fs::remove_dir(&data);
+        let _ = fs::remove_dir(&root);
+    }
+
     #[test]
     fn freecell_surface_routes_piles_and_history() {
         let mut controller = controller(73);

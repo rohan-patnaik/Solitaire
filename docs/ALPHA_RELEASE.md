@@ -74,6 +74,14 @@ save/reopen, and AT-SPI semantics, but the corrected reopened selector mapping
 still needs exact-package acceptance under the no-focus boundary. See
 [`SPIDER_SUIT_SELECTOR_ACCEPTANCE.md`](SPIDER_SUIT_SELECTOR_ACCEPTANCE.md).
 
+Spider's normal one-suit complete-deal fixture also has a display-independent
+process lifecycle gate. A fresh Controller loads the 7/8 save, completes the
+final move, persists the one-time profile through undo/redo, and exits; a second
+fresh Controller reopens byte-identical 8/8 game and profile files with the
+correct selector mapping. This does not substitute for the still-open exact-
+package keyboard action, native process/window identity, or AT-SPI live-region
+gate. See [`SPIDER_COMPLETE_DEAL_ACCEPTANCE.md`](SPIDER_COMPLETE_DEAL_ACCEPTANCE.md).
+
 Pyramid now offers zero, one, or two stock redeals through a
 keyboard/accessibility-declared new-deal control. Focused headless coverage
 proves strict selection, bounded exhaustion, undo/redo, dirty confirmation,
