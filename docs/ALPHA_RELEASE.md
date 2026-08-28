@@ -64,6 +64,16 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+Spider's one-, two-, and four-suit selector now synchronizes both value and
+index from a reopened save and reports the active mode separately from a dirty
+future choice. Focused controller evidence covers every mode, strict malformed
+and 4 KiB hostile values, atomic pending-state preservation, mode-0600 game and
+counter files, confirmation, and loader-level reopen. The prior installed
+`d20ba41` pass exercised all three modes, keyboard mutation, undo/redo,
+save/reopen, and AT-SPI semantics, but the corrected reopened selector mapping
+still needs exact-package acceptance under the no-focus boundary. See
+[`SPIDER_SUIT_SELECTOR_ACCEPTANCE.md`](SPIDER_SUIT_SELECTOR_ACCEPTANCE.md).
+
 Pyramid now offers zero, one, or two stock redeals through a
 keyboard/accessibility-declared new-deal control. Focused headless coverage
 proves strict selection, bounded exhaustion, undo/redo, dirty confirmation,

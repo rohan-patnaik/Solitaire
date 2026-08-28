@@ -48,7 +48,9 @@ The active game's local statistics count a deal as played on its first successfu
 
 ## Spider, FreeCell, Pyramid, and TriPeaks controls
 
-- Choose a game from the picker and select the Spider suit count before starting a new deal.
+- Choose a game from the picker and select the Spider suit count before starting
+  a new deal. Reopened one-, two-, and four-suit games synchronize the selector
+  value/index and report the active mode separately from a pending future choice.
 - In Spider, select a face-up card or same-suit run, then choose another column. Use the stock control to deal a row; every column must be occupied.
 - In FreeCell, select a card or alternating run, then choose a cascade, free cell, or suit foundation. Movable run size is derived from the available free cells and empty cascades.
 - Enter any decimal `u64` deal number and press Enter or choose **Open deal**

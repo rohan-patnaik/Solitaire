@@ -64,12 +64,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
     assert!(metadata.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
     assert!(metadata.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
-    assert!(metadata.contains("actions/runs/33130626248"));
+    assert!(metadata.contains("fa15999d04876160337bd13c0126b20e78873132"));
+    assert!(metadata.contains("actions/runs/33133432510"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
-    assert!(generated.contains("actions/runs/33130626248"));
+    assert!(generated.contains("fa15999d04876160337bd13c0126b20e78873132"));
+    assert!(generated.contains("actions/runs/33133432510"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -441,6 +442,63 @@ fn tripeaks_wraparound_publication_gate_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn pyramid_redeal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_FA15999.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "fa15999d04876160337bd13c0126b20e78873132",
+        "e1b3b5fbd4ef10ab92b5756522b34717c0d4d3d8",
+        "e13313983abac6b03e8972502bbab2ec4241cf80",
+        "actions/runs/33133432510",
+        "job/98728013394",
+        "job/98728013604",
+        "solitaire-omarchy 0.1.0.r0.gfa15999-1",
+        "signed off this exact tip with no actionable findings",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing fa15999 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_FA15999.md"));
+    assert!(catalog.contains("0.1.0.r0.gfa15999-1"));
+}
+
+#[test]
+fn spider_suit_selector_candidate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/SPIDER_SUIT_SELECTOR_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "`1 suit`, `2 suits`, and `4 suits`",
+        "No replay or save schema changes",
+        "spider_suit_options_are_strict_atomic_reopenable_and_mapped",
+        "4 KiB hostile values",
+        "mode `0600`",
+        "d20ba41",
+        "did not verify the corrected reopened ComboBox value/index",
+        "no-focus policy",
+        "rows therefore remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing Spider selector boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("spider_suit_options_are_strict_atomic_reopenable_and_mapped"));
+    assert!(catalog.contains("reopened selector value/index synchronization"));
+    assert!(controller.contains("fn spider_ui_mode_for_render"));
+    assert!(ui.contains("current-value <=> root.spider-suit-mode"));
+    assert!(ui.contains("current-index <=> root.spider-suit-index"));
+    assert!(ui.contains("root.spider-suit-mode-active"));
+}
+
+#[test]
 fn pyramid_redeal_limit_candidate_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/PYRAMID_REDEAL_LIMIT_ACCEPTANCE.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -479,8 +537,8 @@ fn pyramid_redeal_limit_candidate_is_pinned_without_overclaim() {
             .count(),
         3
     );
-    assert!(catalog.contains("Pyramid redeal selector's exact-package value/index behavior"));
-    assert!(catalog.contains("TriPeaks and Pyramid rule selectors are automated candidate"));
+    assert!(catalog.contains("the Pyramid redeal selector's value/index behavior"));
+    assert!(catalog.contains("TriPeaks and Pyramid selectors, and all five normal complete-deal fixtures are automated candidate"));
     assert!(controller.contains("(GameKind::Pyramid, \"No redeals\")"));
     assert!(controller.contains("fn pyramid_ui_options_for_render"));
     assert!(ui.contains("model: [\"No redeals\", \"1 redeal\", \"2 redeals\"]"));
@@ -680,7 +738,7 @@ fn spider_hostile_property_coverage_is_catalogued_without_overclaim() {
         )
     );
     assert!(catalog.contains(
-        "The exact installed final-transition and normal Controller startup/reopen gate and drag/touch behavior remain open."
+        "Exact-package reopened selector value/index synchronization, final transition, normal Controller startup/reopen, and drag/touch remain open."
     ));
     assert!(roadmap.contains(
         "Spider's dependency-free hostile-action and fixed seed/mode action-space tests"
@@ -796,7 +854,7 @@ fn spider_complete_deal_candidate_is_pinned_without_overclaim() {
         )
     );
     assert!(catalog.contains(
-        "The exact installed final-transition and normal Controller startup/reopen gate and drag/touch behavior remain open."
+        "Exact-package reopened selector value/index synchronization, final transition, normal Controller startup/reopen, and drag/touch remain open."
     ));
     assert!(controller.contains("Spider complete — all eight runs are home"));
     assert!(ui.contains("callback spider-tableau-activated(int, int)"));
@@ -1032,6 +1090,9 @@ fn spider_and_freecell_surfaces_are_accessible_and_interactive() {
         assert!(ui.contains(contract), "missing UI contract: {contract}");
     }
     assert!(ui.contains("model: [\"1 suit\", \"2 suits\", \"4 suits\"]"));
+    assert!(ui.contains("current-value <=> root.spider-suit-mode"));
+    assert!(ui.contains("current-index <=> root.spider-suit-index"));
+    assert!(ui.contains("Start the next Spider deal with the selected suit count"));
     assert!(ui.contains("Open free cell"));
 }
 

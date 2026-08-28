@@ -152,6 +152,9 @@ export component AppWindow inherits Window {
     in-out property <int> klondike-scoring-index: 0;
     in-out property <string> klondike-redeal-limit: "Unlimited";
     in-out property <int> klondike-redeal-index: 0;
+    in-out property <string> spider-suit-mode: "1 suit";
+    in-out property <int> spider-suit-index: 0;
+    in property <string> spider-suit-mode-active: "1 suit";
     in-out property <string> tripeaks-rule-mode: "Standard";
     in-out property <int> tripeaks-rule-index: 0;
     in property <bool> tripeaks-wraparound-active: false;
@@ -230,7 +233,7 @@ export component AppWindow inherits Window {
             Rectangle { horizontal-stretch: 1; }
             Text {
                 text: root.game-kind == "Spider"
-                    ? "Score  " + root.score + "     Moves  " + root.moves + "     Runs  " + root.completed-runs + "/8"
+                    ? "Score  " + root.score + "     Moves  " + root.moves + "     Runs  " + root.completed-runs + "/8     Mode  " + root.spider-suit-mode-active
                     : (root.game-kind == "FreeCell"
                         ? "Home  " + root.score + "/52     Moves  " + root.moves + "     Deal  " + root.deal-number
                         : (root.game-kind == "TriPeaks"
@@ -248,13 +251,16 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 spider-mode := ComboBox {
                     model: ["1 suit", "2 suits", "4 suits"];
-                    current-value: "1 suit";
+                    current-value <=> root.spider-suit-mode;
+                    current-index <=> root.spider-suit-index;
+                    enabled: !root.has-pending-new-deal;
                     accessible-label: "Suit count for a new Spider deal";
                 }
                 Button {
                     text: "New deal";
-                    accessible-label: "Start a new Spider deal";
-                    clicked => { root.new-game(spider-mode.current-value); }
+                    enabled: !root.has-pending-new-deal;
+                    accessible-label: "Start the next Spider deal with the selected suit count";
+                    clicked => { root.new-game(root.spider-suit-mode); }
                 }
             }
             if root.game-kind == "TriPeaks": HorizontalBox {
@@ -433,7 +439,7 @@ export component AppWindow inherits Window {
                 y: 4px;
                 height: 16px;
                 text: "Status details — arrow keys scroll · " + (root.game-kind == "Spider"
-                    ? "Move descending same-suit runs. Build by rank; complete King-to-Ace suited runs."
+                    ? "Spider " + root.spider-suit-mode-active + " uses descending same-suit movable runs. Build by rank; complete King-to-Ace suited runs."
                     : (root.game-kind == "FreeCell"
                         ? "Use four free cells to build alternating cascades and ascending suit foundations."
                         : (root.game-kind == "TriPeaks"

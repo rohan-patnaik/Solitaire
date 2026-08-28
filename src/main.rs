@@ -1898,6 +1898,27 @@ fn render_spider(app: &AppWindow, controller: &Controller) {
     app.set_deal_number(SharedString::default());
     app.set_redeals(0);
     app.set_redeals_remaining(0);
+    let (_, active_mode) = spider_ui_mode(state.mode);
+    app.set_spider_suit_mode_active(active_mode.into());
+    if let Some((index, mode)) = spider_ui_mode_for_render(controller) {
+        app.set_spider_suit_index(index);
+        app.set_spider_suit_mode(mode.into());
+    }
+}
+
+fn spider_ui_mode_for_render(controller: &Controller) -> Option<(i32, &'static str)> {
+    controller
+        .pending_new_deal
+        .is_none()
+        .then(|| spider_ui_mode(controller.spider.state.mode))
+}
+
+const fn spider_ui_mode(mode: SuitMode) -> (i32, &'static str) {
+    match mode {
+        SuitMode::One => (0, "1 suit"),
+        SuitMode::Two => (1, "2 suits"),
+        SuitMode::Four => (2, "4 suits"),
+    }
 }
 
 fn render_freecell(app: &AppWindow, controller: &Controller) {
@@ -2754,6 +2775,77 @@ mod tests {
         controller.redo();
         assert_eq!(controller.spider.state, moved);
         remove_save(&path);
+    }
+
+    #[test]
+    fn spider_suit_options_are_strict_atomic_reopenable_and_mapped() {
+        for (label, mode, index) in [
+            ("1 suit", SuitMode::One, 0),
+            ("2 suits", SuitMode::Two, 1),
+            ("4 suits", SuitMode::Four, 2),
+        ] {
+            let path = test_save(&format!("spider-suit-{index}"));
+            remove_save(&path);
+            let mut controller = controller(51 + u64::try_from(index).unwrap());
+            controller.select_game("Spider");
+            controller.spider_save_path = Some(path.clone());
+            controller.new_game(label);
+            assert_eq!(controller.spider.state.mode, mode);
+            assert_eq!(load_spider_revisioned(&path).unwrap().0, controller.spider);
+            assert_eq!(spider_ui_mode_for_render(&controller), Some((index, label)));
+            remove_save(&path);
+        }
+
+        let game_path = test_save("spider-suit-dirty");
+        let counter_path = test_save("spider-suit-counter");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+        let mut controller = controller(55);
+        controller.select_game("Spider");
+        controller.spider_save_path = Some(game_path.clone());
+        controller.deal_counters_path = Some(counter_path.clone());
+        controller.new_game("2 suits");
+        let current = controller.spider.clone();
+        let saved = fs::read(&game_path).unwrap();
+        let counters = fs::read(&counter_path).unwrap();
+        controller.dirty[controller.active_index()] = true;
+        controller.new_game("4 suits");
+        let pending = controller.pending_new_deal;
+        let oversized = "S".repeat(4_096);
+        for invalid in [
+            "",
+            "one suit",
+            "1 suits",
+            " 2 suits",
+            "2 suits ",
+            "3 suits",
+            "4 suits · trailing",
+            oversized.as_str(),
+        ] {
+            controller.new_game(invalid);
+            assert!(controller.pending_new_deal == pending, "{invalid:?}");
+            assert_eq!(controller.spider, current, "{invalid:?}");
+            assert_eq!(fs::read(&game_path).unwrap(), saved, "{invalid:?}");
+            assert_eq!(fs::read(&counter_path).unwrap(), counters, "{invalid:?}");
+        }
+        assert_eq!(spider_ui_mode_for_render(&controller), None);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&counter_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        controller.discard_progress_and_start_pending();
+        assert_eq!(controller.spider.state.mode, SuitMode::Four);
+        assert!(controller.pending_new_deal.is_none());
+        assert_eq!(
+            load_spider_revisioned(&game_path).unwrap().0,
+            controller.spider
+        );
+        remove_save(&game_path);
+        remove_save(&counter_path);
     }
 
     #[test]
