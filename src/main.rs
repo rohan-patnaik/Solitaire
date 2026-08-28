@@ -3556,6 +3556,119 @@ mod tests {
         remove_save(&profile_path);
     }
 
+    fn exercise_freecell_restart_child(phase: &str) {
+        let mut restarted = Controller::new();
+        assert_eq!(restarted.freecell.state.deal_number, 0);
+        assert!(restarted.pending_new_deal.is_none());
+        restarted.select_game("FreeCell");
+        assert!(!restarted.dirty[restarted.active_index()]);
+
+        if phase == "complete" {
+            assert!(!restarted.freecell.state.is_won());
+            assert_eq!(restarted.freecell.state.moves, 105);
+            assert_eq!(
+                restarted
+                    .local_profile
+                    .statistics(ProfileGameKind::FreeCell),
+                solitaire::profile::GameStatistics::default()
+            );
+            restarted.activate_freecell_cell(1);
+            restarted.activate_freecell_foundation(3);
+            assert_eq!(restarted.status, "FreeCell complete — every suit is home");
+            assert!(restarted.freecell.state.is_won());
+            restarted.undo();
+            assert!(!restarted.freecell.state.is_won());
+            restarted.redo();
+            assert!(restarted.freecell.state.is_won());
+            return;
+        }
+
+        assert_eq!(phase, "reopen");
+        assert!(restarted.freecell.state.is_won());
+        assert_eq!(restarted.freecell.state.moves, 106);
+        assert_eq!(
+            restarted
+                .local_profile
+                .statistics(ProfileGameKind::FreeCell),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        restarted.observe_active_profile();
+    }
+
+    #[test]
+    fn freecell_complete_deal_survives_normal_controller_restart() {
+        const PHASE: &str = "SOLITAIRE_FREECELL_COMPLETE_RESTART_PHASE";
+        const ROOT: &str = "SOLITAIRE_FREECELL_COMPLETE_RESTART_ROOT";
+        const TOKEN: &str = "SOLITAIRE_FREECELL_COMPLETE_RESTART_TOKEN";
+        if let Ok(phase) = std::env::var(PHASE) {
+            validate_restart_child_root(ROOT, TOKEN);
+            exercise_freecell_restart_child(&phase);
+            return;
+        }
+
+        let restart_root = create_restart_root("freecell-complete");
+        let data = restart_root.path().join("solitaire");
+        let game_path = data.join("freecell-save.json");
+        let profile_path = data.join("local-profile.json");
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/freecell-seed-zero-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        run_restart_phase(
+            restart_root.path(),
+            "complete",
+            restart_root.token(),
+            "tests::freecell_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        let completed_save = fs::read(&game_path).unwrap();
+        let completed_profile = fs::read(&profile_path).unwrap();
+        assert!(
+            load_freecell_revisioned(&game_path)
+                .unwrap()
+                .0
+                .state
+                .is_won()
+        );
+        assert_eq!(
+            load_local_profile_revisioned(&profile_path)
+                .unwrap()
+                .0
+                .statistics(ProfileGameKind::FreeCell),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+
+        run_restart_phase(
+            restart_root.path(),
+            "reopen",
+            restart_root.token(),
+            "tests::freecell_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        assert_eq!(fs::read(&game_path).unwrap(), completed_save);
+        assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
+        for path in [&game_path, &profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        restart_root.finish();
+    }
+
     #[test]
     fn tripeaks_surface_routes_standard_play_history_and_reopen() {
         let path = test_save("tripeaks-surface");

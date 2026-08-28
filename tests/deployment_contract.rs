@@ -67,12 +67,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("fa15999d04876160337bd13c0126b20e78873132"));
     assert!(metadata.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
     assert!(metadata.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
-    assert!(metadata.contains("actions/runs/33136360301"));
+    assert!(metadata.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
+    assert!(metadata.contains("actions/runs/33137835181"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
-    assert!(generated.contains("actions/runs/33136360301"));
+    assert!(generated.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
+    assert!(generated.contains("actions/runs/33137835181"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -526,6 +527,36 @@ fn spider_restart_publication_gate_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn klondike_restart_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_D23382B.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "2bf6aa7d4529370051f83552646422a56d020498",
+        "d23382b9ec62c7e18dcec9b84f13bb16072338b4",
+        "9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b",
+        "1ecf716d36752ff96415032d2f08c0747d023fa0",
+        "failure paths could leave task-owned restart roots",
+        "signed off with no actionable findings",
+        "actions/runs/33137835181",
+        "job/98741750892",
+        "job/98741750767",
+        "solitaire-omarchy 0.1.0.r0.gd23382b-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+        "Klondike final-action and process/window identity gates remain",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing d23382b publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_D23382B.md"));
+    assert!(catalog.contains("0.1.0.r0.gd23382b-1"));
+}
+
+#[test]
 fn spider_suit_selector_candidate_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/SPIDER_SUIT_SELECTOR_ACCEPTANCE.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -728,8 +759,13 @@ fn freecell_complete_deal_candidate_is_pinned_without_overclaim() {
         "King of Spades in free cell 2",
         "action 106 and wins",
         "controller_completes_legal_freecell_replay_once_and_reopens",
+        "freecell_complete_deal_survives_normal_controller_restart",
         "FreeCell complete — every suit is home",
         "exactly one played and one won",
+        "two fresh source processes",
+        "ten-second kill-and-reap",
+        "deadline, bounded diagnostics",
+        "task-root cleanup on success or unwind",
         "continuously preserves the active desktop",
         "rows Partial",
     ] {
@@ -740,7 +776,8 @@ fn freecell_complete_deal_candidate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("tests/fixtures/freecell-seed-zero-near-win.json"));
     assert!(catalog.contains("docs/FREECELL_COMPLETE_DEAL_ACCEPTANCE.md"));
-    assert!(catalog.contains("exact installed final foundation move"));
+    assert!(catalog.contains("freecell_complete_deal_survives_normal_controller_restart"));
+    assert!(catalog.contains("exact installed final foundation move/process identity"));
 }
 
 #[test]

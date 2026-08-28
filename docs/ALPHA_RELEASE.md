@@ -136,8 +136,11 @@ FreeCell deal zero also has a checked-in normal 105-action replay with only the
 King of Spades remaining in free cell 2. Production replay reconstruction and
 the controller's keyboard-routable final foundation move prove the complete
 status, 0600 game/profile persistence, exact one-time played/won observation,
-undo/redo idempotence, and loader-level reopen. This is candidate evidence;
-exact installed final-action acceptance remains open. See
+undo/redo idempotence, and loader-level reopen. A bounded display-independent
+process gate additionally completes the deal through a fresh Controller, exits,
+and proves a second fresh Controller reopens byte-identical won-game and one-
+time profile files. This is source-process candidate evidence; exact installed
+final-action and process/window acceptance remain open. See
 [`FREECELL_COMPLETE_DEAL_ACCEPTANCE.md`](FREECELL_COMPLETE_DEAL_ACCEPTANCE.md).
 
 The native Klondike new-deal surface now offers draw-one or draw-three with
