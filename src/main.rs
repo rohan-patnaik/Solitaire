@@ -67,6 +67,15 @@ impl PointerClickTimer {
     fn pointer_clicked(
         self: &Rc<Self>,
         identity: KlondikePointerIdentity,
+        callback: impl FnMut() + 'static,
+    ) {
+        self.pointer_clicked_after(identity, POINTER_DOUBLE_CLICK_INTERVAL, callback);
+    }
+
+    fn pointer_clicked_after(
+        self: &Rc<Self>,
+        identity: KlondikePointerIdentity,
+        interval: Duration,
         mut callback: impl FnMut() + 'static,
     ) {
         {
@@ -76,23 +85,19 @@ impl PointerClickTimer {
             }
         }
         let weak = Rc::downgrade(self);
-        self.timer.start(
-            TimerMode::SingleShot,
-            POINTER_DOUBLE_CLICK_INTERVAL,
-            move || {
-                let Some(timer) = weak.upgrade() else {
-                    return;
-                };
-                let mut state = timer.state.borrow_mut();
-                if state.pending.as_ref() != Some(&identity) {
-                    return;
-                }
-                state.pending = None;
-                state.double_armed = false;
-                drop(state);
-                callback();
-            },
-        );
+        self.timer.start(TimerMode::SingleShot, interval, move || {
+            let Some(timer) = weak.upgrade() else {
+                return;
+            };
+            let mut state = timer.state.borrow_mut();
+            if state.pending.as_ref() != Some(&identity) {
+                return;
+            }
+            state.pending = None;
+            state.double_armed = false;
+            drop(state);
+            callback();
+        });
     }
 
     fn take_double(&self, identity: &KlondikePointerIdentity) -> bool {
@@ -3305,23 +3310,7 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-    struct TimerOnlyPlatform;
-
-    impl slint::platform::Platform for TimerOnlyPlatform {
-        fn create_window_adapter(
-            &self,
-        ) -> Result<Rc<dyn slint::platform::WindowAdapter>, slint::PlatformError> {
-            Err(slint::PlatformError::NoEventLoopProvider)
-        }
-    }
-
-    fn ensure_timer_platform() {
-        let _ = slint::platform::set_platform(Box::new(TimerOnlyPlatform));
-        slint::platform::update_timers_and_animations();
-    }
-
     fn expire_pointer_timer() {
-        std::thread::sleep(POINTER_DOUBLE_CLICK_INTERVAL + Duration::from_millis(50));
         slint::platform::update_timers_and_animations();
     }
 
@@ -3517,15 +3506,17 @@ mod tests {
 
     #[test]
     fn pointer_click_timer_is_idle_single_shot_and_cancelable() {
-        ensure_timer_platform();
         let calls = Rc::new(Cell::new(0_u8));
         let timer = Rc::new(PointerClickTimer::default());
         let identity = waste_pointer_identity("A♣", "0", "0");
+        assert_eq!(POINTER_DOUBLE_CLICK_INTERVAL, Duration::from_millis(500));
         assert_eq!(calls.get(), 0);
         assert!(!timer.timer.running());
 
         let fired = Rc::clone(&calls);
-        timer.pointer_clicked(identity.clone(), move || fired.set(fired.get() + 1));
+        timer.pointer_clicked_after(identity.clone(), Duration::ZERO, move || {
+            fired.set(fired.get() + 1);
+        });
         assert!(timer.timer.running());
         expire_pointer_timer();
         assert_eq!(calls.get(), 1);
@@ -3534,7 +3525,9 @@ mod tests {
         assert_eq!(calls.get(), 1);
 
         let fired = Rc::clone(&calls);
-        timer.pointer_clicked(identity.clone(), move || fired.set(fired.get() + 1));
+        timer.pointer_clicked_after(identity.clone(), Duration::ZERO, move || {
+            fired.set(fired.get() + 1);
+        });
         timer.pointer_pressed(&identity);
         expire_pointer_timer();
         assert_eq!(calls.get(), 1);
@@ -3543,7 +3536,6 @@ mod tests {
 
     #[test]
     fn deferred_pointer_click_cannot_overtake_keyboard_or_stock_input() {
-        ensure_timer_platform();
         let timer = Rc::new(PointerClickTimer::default());
         let controller = Rc::new(RefCell::new(controller(0)));
         let tableau = controller.borrow().game.state.tableau[0].clone();
@@ -3553,7 +3545,7 @@ mod tests {
         let delayed = Rc::clone(&controller);
         let delayed_card = card.clone();
         let identity = tableau_pointer_identity(0, index, &card, "0", "0");
-        timer.pointer_clicked(identity, move || {
+        timer.pointer_clicked_after(identity, Duration::ZERO, move || {
             let mut state = delayed.borrow_mut();
             if state.interaction_generation == 0 {
                 state.activate_tableau_pointer(0, index, &delayed_card, "0", "0");
@@ -3571,7 +3563,7 @@ mod tests {
         let delayed = Rc::clone(&controller);
         let delayed_card = card;
         let identity = tableau_pointer_identity(0, index, &delayed_card, "0", "1");
-        timer.pointer_clicked(identity, move || {
+        timer.pointer_clicked_after(identity, Duration::ZERO, move || {
             let mut state = delayed.borrow_mut();
             if state.interaction_generation == 1 {
                 state.activate_tableau_pointer(0, index, &delayed_card, "0", "1");
@@ -3589,7 +3581,6 @@ mod tests {
 
     #[test]
     fn double_click_requires_matching_first_click_identity() {
-        ensure_timer_platform();
         let timer = Rc::new(PointerClickTimer::default());
         let direct = waste_pointer_identity("A♣", "0", "0");
         assert!(!timer.take_double(&direct));
@@ -3601,14 +3592,14 @@ mod tests {
         controller.borrow_mut().draw_or_recycle();
         let first_card = *controller.borrow().game.state.waste.last().unwrap();
         let first = waste_pointer_identity(&card_label(first_card), "0", "0");
-        timer.pointer_clicked(first, || {});
+        timer.pointer_clicked_after(first, Duration::ZERO, || {});
 
         controller.borrow_mut().draw_or_recycle();
         controller.borrow_mut().interaction_generation = 1;
         let second_card = *controller.borrow().game.state.waste.last().unwrap();
         let second = waste_pointer_identity(&card_label(second_card), "0", "1");
         timer.pointer_pressed(&second);
-        timer.pointer_clicked(second.clone(), || {});
+        timer.pointer_clicked_after(second.clone(), Duration::ZERO, || {});
         let before_game = controller.borrow().game.clone();
         let before_selection = controller.borrow().selection;
         let before_profile = controller.borrow().local_profile.clone();
@@ -3619,9 +3610,9 @@ mod tests {
         assert_eq!(fs::read(&game_path).unwrap(), b"owner-bytes");
 
         let legitimate = tableau_pointer_identity(2, 3, "Q♥", "7", "9");
-        timer.pointer_clicked(legitimate.clone(), || {});
+        timer.pointer_clicked_after(legitimate.clone(), Duration::ZERO, || {});
         timer.pointer_pressed(&legitimate);
-        timer.pointer_clicked(legitimate.clone(), || {});
+        timer.pointer_clicked_after(legitimate.clone(), Duration::ZERO, || {});
         assert!(timer.take_double(&legitimate));
         expire_pointer_timer();
         remove_save(&game_path);
@@ -3629,7 +3620,6 @@ mod tests {
 
     #[test]
     fn blocked_close_invalidates_a_pending_pointer_click() {
-        ensure_timer_platform();
         let timer = Rc::new(PointerClickTimer::default());
         let game_path = test_save("blocked-close-pointer");
         remove_save(&game_path);
@@ -3641,7 +3631,7 @@ mod tests {
         let identity = tableau_pointer_identity(0, index, &card, "0", "0");
         let delayed = Rc::clone(&controller);
         let delayed_game_path = game_path.clone();
-        timer.pointer_clicked(identity, move || {
+        timer.pointer_clicked_after(identity, Duration::ZERO, move || {
             if delayed.borrow().interaction_generation == 0 {
                 let mut state = delayed.borrow_mut();
                 state.draw_or_recycle();

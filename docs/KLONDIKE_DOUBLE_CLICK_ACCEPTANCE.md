@@ -46,9 +46,11 @@ assistive-technology acceptance.
 ## Automated evidence
 
 - `pointer_click_timer_is_idle_single_shot_and_cancelable` runs the real Slint
-  timer headlessly and proves zero idle callbacks, exactly one callback for a
-  single schedule, no repetition, and pointer-down cancellation past the full
-  interval.
+  timer headlessly through a zero-delay test seam, pins the production interval
+  to 500 ms, and proves zero idle callbacks, exactly one callback for a single
+  schedule, no repetition, and pointer-down cancellation before expiry. The
+  seam avoids requiring font discovery merely to create a timer context in a
+  minimal package-check container.
 - `deferred_pointer_click_cannot_overtake_keyboard_or_stock_input` proves that
   intervening immediate card activation and stock mutation win deterministically
   while the older delayed callback remains inert.
