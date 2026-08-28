@@ -39,6 +39,19 @@ requires:
   loader-level reopen; and
 - exact reconstruction of the won game and profile from disk.
 
+`pyramid_complete_deal_survives_normal_controller_restart` extends that
+coverage across two fresh source processes. The parent installs the pinned
+normal save in an ownership-checked temporary root. The first child starts a
+fresh `Controller`, selects Pyramid, completes the keyboard-routable final
+pair, verifies selection, score, undo/redo, and the exact one-time profile, and
+exits. The second child starts another fresh `Controller` and proves the won
+game and profile reopen byte-for-byte. Each phase has the shared ten-second
+kill-and-reap deadline, bounded diagnostics, hostile ambient-environment guard,
+and complete task-root cleanup on success or unwind.
+
+This is display-independent source-process lifecycle evidence. It is not the
+installed process/window identity or final input gate below.
+
 ## Remaining installed gate
 
 After publication and exact-SHA package CI, an input-capable offscreen

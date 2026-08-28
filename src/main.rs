@@ -4414,6 +4414,124 @@ mod tests {
         remove_save(&profile_path);
     }
 
+    fn exercise_pyramid_restart_child(phase: &str) {
+        let mut restarted = Controller::new();
+        assert_eq!(restarted.pyramid.state.seed, 0);
+        assert!(restarted.pending_new_deal.is_none());
+        assert!(restarted.pyramid_selection.is_none());
+        restarted.select_game("Pyramid");
+        assert!(!restarted.dirty[restarted.active_index()]);
+
+        if phase == "complete" {
+            assert!(!restarted.pyramid.state.is_won());
+            assert_eq!(restarted.pyramid.state.moves, 62);
+            assert_eq!(restarted.pyramid.state.score, 400);
+            assert_eq!(
+                restarted.local_profile.statistics(ProfileGameKind::Pyramid),
+                solitaire::profile::GameStatistics::default()
+            );
+            restarted.activate_pyramid_card(0);
+            assert_eq!(
+                restarted.pyramid_selection,
+                Some(pyramid::Source::Pyramid(0))
+            );
+            restarted.activate_pyramid_waste();
+            assert_eq!(
+                restarted.status,
+                "Pyramid complete — every tableau card is clear"
+            );
+            assert!(restarted.pyramid.state.is_won());
+            restarted.undo();
+            assert!(!restarted.pyramid.state.is_won());
+            restarted.redo();
+            assert!(restarted.pyramid.state.is_won());
+            return;
+        }
+
+        assert_eq!(phase, "reopen");
+        assert!(restarted.pyramid.state.is_won());
+        assert_eq!(restarted.pyramid.state.card_count(), 10);
+        assert_eq!(restarted.pyramid.state.moves, 63);
+        assert_eq!(restarted.pyramid.state.score, 420);
+        assert_eq!(
+            restarted.local_profile.statistics(ProfileGameKind::Pyramid),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        restarted.observe_active_profile();
+    }
+
+    #[test]
+    fn pyramid_complete_deal_survives_normal_controller_restart() {
+        const PHASE: &str = "SOLITAIRE_PYRAMID_COMPLETE_RESTART_PHASE";
+        const ROOT: &str = "SOLITAIRE_PYRAMID_COMPLETE_RESTART_ROOT";
+        const TOKEN: &str = "SOLITAIRE_PYRAMID_COMPLETE_RESTART_TOKEN";
+        if let Ok(phase) = std::env::var(PHASE) {
+            validate_restart_child_root(ROOT, TOKEN);
+            exercise_pyramid_restart_child(&phase);
+            return;
+        }
+
+        let restart_root = create_restart_root("pyramid-complete");
+        let data = restart_root.path().join("solitaire");
+        let game_path = data.join("pyramid-save.json");
+        let profile_path = data.join("local-profile.json");
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/pyramid-seed-zero-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        run_restart_phase(
+            restart_root.path(),
+            "complete",
+            restart_root.token(),
+            "tests::pyramid_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        let completed_save = fs::read(&game_path).unwrap();
+        let completed_profile = fs::read(&profile_path).unwrap();
+        let completed = load_pyramid_revisioned(&game_path).unwrap().0;
+        assert!(completed.state.is_won());
+        assert_eq!(completed.state.card_count(), 10);
+        assert_eq!(completed.state.moves, 63);
+        assert_eq!(completed.state.score, 420);
+        assert_eq!(
+            load_local_profile_revisioned(&profile_path)
+                .unwrap()
+                .0
+                .statistics(ProfileGameKind::Pyramid),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+
+        run_restart_phase(
+            restart_root.path(),
+            "reopen",
+            restart_root.token(),
+            "tests::pyramid_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        assert_eq!(fs::read(&game_path).unwrap(), completed_save);
+        assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
+        for path in [&game_path, &profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        restart_root.finish();
+    }
+
     #[test]
     fn undo_redo_never_hide_a_save_failure_and_retry_remains_available() {
         let mut controller = controller(91);

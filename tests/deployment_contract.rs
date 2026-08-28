@@ -69,12 +69,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
     assert!(metadata.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
     assert!(metadata.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
-    assert!(metadata.contains("actions/runs/33138972312"));
+    assert!(metadata.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
+    assert!(metadata.contains("actions/runs/33141845041"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
-    assert!(generated.contains("actions/runs/33138972312"));
+    assert!(generated.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
+    assert!(generated.contains("actions/runs/33141845041"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -590,6 +591,34 @@ fn freecell_restart_publication_gate_is_pinned_without_overclaim() {
 }
 
 #[test]
+fn tripeaks_restart_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_720FAB0.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "720fab04ab3528d1e8e66768ebf47a85dc2f94b1",
+        "0c806cbe8d26ed71bbef888620a5a77cbeaa12e1",
+        "96322866fe5d8c33126f594f0dd7f9590463adea",
+        "signed off with no",
+        "actions/runs/33141845041",
+        "job/98754184672",
+        "job/98754184768",
+        "solitaire-omarchy 0.1.0.r0.g720fab0-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+        "TriPeaks final-action and process/window identity gates remain",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 720fab0 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_720FAB0.md"));
+    assert!(catalog.contains("0.1.0.r0.g720fab0-1"));
+}
+
+#[test]
 fn spider_suit_selector_candidate_is_pinned_without_overclaim() {
     let evidence = include_str!("../docs/SPIDER_SUIT_SELECTOR_ACCEPTANCE.md");
     let catalog = include_str!("../docs/offline-capabilities.json");
@@ -1074,6 +1103,12 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
     assert!(ui.contains("accessible-live-region: polite"));
 }
 
+fn assert_pyramid_restart_source_contract(controller: &str) {
+    assert!(controller.contains("fn exercise_pyramid_restart_child"));
+    assert!(controller.contains("pyramid_complete_deal_survives_normal_controller_restart"));
+    assert!(controller.contains("Pyramid complete — every tableau card is clear"));
+}
+
 #[test]
 fn pyramid_complete_deal_candidate_is_pinned_without_overclaim() {
     let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1141,6 +1176,11 @@ fn pyramid_complete_deal_candidate_is_pinned_without_overclaim() {
         "represented cards account for the original 52-card deck",
         "Pyramid complete — every tableau card is clear",
         "controller_completes_legal_pyramid_replay_once_and_reopens",
+        "pyramid_complete_deal_survives_normal_controller_restart",
+        "two fresh source processes",
+        "shared ten-second",
+        "hostile ambient-environment guard",
+        "display-independent source-process lifecycle evidence",
         "exactly one played and one won observation",
         "Pyramid tableau position 1",
         "internal callback index is `0`",
@@ -1154,6 +1194,7 @@ fn pyramid_complete_deal_candidate_is_pinned_without_overclaim() {
     for test in [
         "legal_seed_zero_replay_reaches_a_one_pair_near_win",
         "controller_completes_legal_pyramid_replay_once_and_reopens",
+        "pyramid_complete_deal_survives_normal_controller_restart",
         "pyramid_complete_deal_candidate_is_pinned_without_overclaim",
     ] {
         assert!(catalog.contains(test), "missing Pyramid evidence: {test}");
@@ -1161,8 +1202,12 @@ fn pyramid_complete_deal_candidate_is_pinned_without_overclaim() {
     assert!(catalog.contains(
         "{\"id\":\"game.pyramid\",\"title\":\"Playable Pyramid\",\"status\":\"partial\""
     ));
-    assert!(catalog.contains("The exact installed final transition"));
-    assert!(controller.contains("Pyramid complete — every tableau card is clear"));
+    assert!(
+        catalog.contains(
+            "Exact-package redeal selection/display and final transition/process identity"
+        )
+    );
+    assert_pyramid_restart_source_contract(controller);
     assert!(ui.contains("callback pyramid-tableau-activated(int)"));
     assert!(ui.contains("callback pyramid-waste-activated"));
     assert!(ui.contains("accessible-action-default => { root.activated(); }"));

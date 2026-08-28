@@ -97,7 +97,11 @@ top card and one waste card remaining whose ranks total 13. Production replay
 reconstruction and the controller's keyboard-routable final selection/pair
 prove the complete status, score, 0600 game/profile persistence, exact one-time
 played/won observation, undo/redo idempotence, and loader-level reopen. This is
-candidate evidence; exact installed final-action acceptance remains open. See
+extended by a bounded display-independent process gate that completes the deal
+through a fresh Controller, exits, and proves a second fresh Controller reopens
+byte-identical won-game and one-time profile files. This is source-process
+candidate evidence; exact installed final-action and process/window identity
+remain open. See
 [`PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md`](PYRAMID_COMPLETE_DEAL_ACCEPTANCE.md).
 
 TriPeaks offers Standard adjacency and an optional Ace-King wrap rule through a

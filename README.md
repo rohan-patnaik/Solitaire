@@ -78,9 +78,11 @@ The active game's local statistics count a deal as played on its first successfu
   against the active maximum, hints, and win status. Covered-card identities
   stay hidden visually and from accessible names.
 - A checked-in normal seed-zero Pyramid replay reconstructs to one legal pair
-  before victory and exercises final selection/pair routing, status, atomic
-  save/reopen, undo/redo, and one-time local played/won accounting.
-  Exact-package final-action acceptance remains open.
+  before victory. A bounded display-independent lifecycle gate starts a fresh
+  Controller, exercises the final selection/pair route, status, score, atomic
+  persistence and undo/redo, exits, then proves a second fresh Controller
+  reopens byte-identical won-game and one-time profile files. Exact-package
+  final-action and process/window acceptance remain open.
 - In TriPeaks, choose Standard adjacency or the optional Ace-King wrap rule for
   a new deal. Activate an exposed tableau card one rank above or below the
   waste, or activate the stock/waste control to draw. The original four-row
