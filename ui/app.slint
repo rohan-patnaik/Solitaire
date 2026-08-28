@@ -145,6 +145,7 @@ export component AppWindow inherits Window {
     in property <bool> has-unsaved-changes;
     in property <bool> has-any-unsaved-changes;
     in property <bool> has-pending-new-deal;
+    in property <bool> pending-deal-is-restart;
     in property <bool> has-pending-save-conflict;
     in-out property <string> klondike-draw-mode: "Draw 1";
     in-out property <int> klondike-draw-index: 0;
@@ -183,6 +184,7 @@ export component AppWindow inherits Window {
     callback undo-requested;
     callback redo-requested;
     callback hint-requested;
+    callback restart-deal-requested;
     callback autocomplete-requested;
     callback retry-save-requested;
     callback discard-progress-and-start-requested;
@@ -226,7 +228,7 @@ export component AppWindow inherits Window {
                 text: "Reload disk copy";
                 enabled: root.has-unsaved-changes || root.has-pending-save-conflict;
                 accessible-label: root.has-pending-save-conflict
-                    ? "Reload the newer disk copy and resolve pending new deal ownership"
+                    ? "Reload the newer disk copy and resolve pending deal-change ownership"
                     : "Discard in-memory changes and reload the newer disk copy";
                 clicked => { root.reload-disk-requested(); }
             }
@@ -306,6 +308,11 @@ export component AppWindow inherits Window {
             Button { text: "Undo"; enabled: root.can-undo; clicked => { root.undo-requested(); } }
             Button { text: "Redo"; enabled: root.can-redo; clicked => { root.redo-requested(); } }
             Button { text: "Hint"; clicked => { root.hint-requested(); } }
+            if !root.has-pending-new-deal: Button {
+                text: "Restart deal";
+                accessible-label: "Restart the current deal with the same deal number and rules";
+                clicked => { root.restart-deal-requested(); }
+            }
             Text {
                 text: root.local-statistics;
                 accessible-label: "Device-local statistics for the active game: " + root.local-statistics;
@@ -319,13 +326,17 @@ export component AppWindow inherits Window {
                 clicked => { root.retry-save-requested(); }
             }
             if root.has-pending-new-deal: Button {
-                text: "Discard and start";
-                accessible-label: "Discard current unsaved progress and start the pending new deal";
+                text: root.pending-deal-is-restart ? "Discard and restart" : "Discard and start";
+                accessible-label: root.pending-deal-is-restart
+                    ? "Discard current unsaved progress and restart this deal"
+                    : "Discard current unsaved progress and start the pending new deal";
                 clicked => { root.discard-progress-and-start-requested(); }
             }
             if root.has-pending-new-deal: Button {
-                text: "Cancel new deal";
-                accessible-label: "Cancel the pending new deal and preserve the current game";
+                text: root.pending-deal-is-restart ? "Cancel restart" : "Cancel new deal";
+                accessible-label: root.pending-deal-is-restart
+                    ? "Cancel the pending restart and preserve the current game"
+                    : "Cancel the pending new deal and preserve the current game";
                 clicked => { root.cancel-new-deal-requested(); }
             }
             if root.has-pending-save-conflict: Button {

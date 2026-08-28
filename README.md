@@ -48,6 +48,13 @@ Progress is saved atomically under `$XDG_DATA_HOME/solitaire`, falling back to `
 
 The active game's local statistics count a deal as played on its first successful mutation and count a win once for that numbered deal. The fixed-size versioned profile uses the same bounded atomic save, stale-writer detection, retry/close guard, and corrupt-file quarantine behavior as game saves. It is one anonymous device-local profile: named profiles, achievements, streaks, import/export, cross-device sync, and cloud identity remain unimplemented. Game and profile files are each atomic but are not one cross-file transaction, so power-loss acceptance remains open.
 
+All five games expose **Restart deal** as a keyboard-focusable action. It
+recreates the active deal from the same repository-defined number and exact
+rules, atomically replaces the save, preserves next-deal counters and local
+statistics, and fails closed with explicit recovery controls. Restart begins a
+fresh replay history and is intentionally not itself undoable. Exact-package
+keyboard and AT-SPI acceptance for this control remains open.
+
 ## Spider, FreeCell, Pyramid, and TriPeaks controls
 
 - Choose a game from the picker and select the Spider suit count before starting

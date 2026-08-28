@@ -40,6 +40,12 @@ Functional parity is achievable for the five core games and common collection fe
   the capability stays Partial.
 - Pyramid now has a playable original Slint surface backed by its deterministic engine, with sequential numbered deals, pair-to-13 and king removal, selectable zero-, one-, or two-redeal bounds, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Focused headless evidence covers strict selection, exhaustion, hostile inputs, atomic dirty confirmation, save/reopen, undo/redo, and persisted custom bounds. A normal seed-zero replay reaches a one-pair near-win, and a bounded subprocess gate persists its final pair, score, and one-time profile across undo/redo, process exit, and a second fresh Controller's byte-identical reopen. Exact-package rule-selection/final-action acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - A bounded anonymous device-local profile now records per-game deals played and won from proven controller lifecycle transitions. All five games have bounded two-Controller subprocess evidence for byte-identical won-game/profile reopen. Named profiles, achievements, streaks, import/export, sync, broader collection workflows, and release-quality work remain open.
+- All five games now share a display-independent restart-current-deal workflow.
+  It preserves the exact active seed/deal number and rules, never consumes the
+  next sequence, retains local statistics, clears replay history at the deal
+  boundary, saves atomically, and exposes stale-writer/no-save recovery. The
+  exact-package keyboard/AT-SPI control remains unaccepted, so affected rows
+  stay Partial.
 - Real Omarchy/Wayland acceptance at exact published SHA `f6b0cb7e55d296bdf77714efc48a1775b858c041` verified an installed legal mutation and save/reopen in all five games, local-profile recovery and conflict handling, live plugin summon, shell responsiveness, and detached native-process survival across a supported shell restart. A focused exact-package pass at `d20ba41` subsequently accepted all three Spider suit modes and the keyboard/AT-SPI long-status workflow. At `4b31024`, the exact plugin's normal launch plus isolated live missing-binary and immediate-exit-42 notification paths passed, closing only the launcher row. The scopes and open alpha limits are recorded in `docs/ALPHA_RELEASE.md`.
 
 ### M0 — foundation

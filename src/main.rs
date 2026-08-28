@@ -47,6 +47,7 @@ enum NewDealVariant {
         draw_mode: DrawMode,
         scoring: Scoring,
         max_redeals: Option<u8>,
+        timed: bool,
     },
     Spider(SuitMode),
     FreeCell(FreeCellDeal),
@@ -68,6 +69,13 @@ enum FreeCellDeal {
 struct PendingNewDeal {
     game: GameKind,
     variant: NewDealVariant,
+    restart_seed: Option<u64>,
+}
+
+impl PendingNewDeal {
+    const fn is_restart(self) -> bool {
+        self.restart_seed.is_some()
+    }
 }
 
 enum ProspectiveGame {
@@ -361,6 +369,7 @@ impl Controller {
         self.stage_new_deal(PendingNewDeal {
             game: self.active,
             variant,
+            restart_seed: None,
         });
     }
 
@@ -376,14 +385,61 @@ impl Controller {
         self.stage_new_deal(PendingNewDeal {
             game: GameKind::FreeCell,
             variant: NewDealVariant::FreeCell(FreeCellDeal::Exact(deal_number)),
+            restart_seed: None,
         });
+    }
+
+    fn restart_current_deal(&mut self) {
+        let request = match self.active {
+            GameKind::Klondike => PendingNewDeal {
+                game: GameKind::Klondike,
+                variant: NewDealVariant::Klondike {
+                    draw_mode: self.game.state.options.draw_mode,
+                    scoring: self.game.state.options.scoring,
+                    max_redeals: self.game.state.options.max_redeals,
+                    timed: self.game.state.options.timed,
+                },
+                restart_seed: Some(self.game.state.seed),
+            },
+            GameKind::Spider => PendingNewDeal {
+                game: GameKind::Spider,
+                variant: NewDealVariant::Spider(self.spider.state.mode),
+                restart_seed: Some(self.spider.state.seed),
+            },
+            GameKind::FreeCell => PendingNewDeal {
+                game: GameKind::FreeCell,
+                variant: NewDealVariant::FreeCell(FreeCellDeal::Exact(
+                    self.freecell.state.deal_number,
+                )),
+                restart_seed: Some(self.freecell.state.deal_number),
+            },
+            GameKind::TriPeaks => PendingNewDeal {
+                game: GameKind::TriPeaks,
+                variant: NewDealVariant::TriPeaks {
+                    wraparound: self.tripeaks.state.options.wraparound,
+                },
+                restart_seed: Some(self.tripeaks.state.seed),
+            },
+            GameKind::Pyramid => PendingNewDeal {
+                game: GameKind::Pyramid,
+                variant: NewDealVariant::Pyramid {
+                    max_redeals: self.pyramid.state.options.max_redeals,
+                },
+                restart_seed: Some(self.pyramid.state.seed),
+            },
+        };
+        self.stage_new_deal(request);
     }
 
     fn stage_new_deal(&mut self, request: PendingNewDeal) {
         self.pending_new_deal = Some(request);
         self.pending_new_deal_conflict = false;
         if self.dirty[self.active_index()] || self.local_profile_dirty {
-            self.status = "This deal or its local statistics have unsaved progress. Retry save before starting a new deal, or cancel.".into();
+            self.status = if request.is_restart() {
+                "This deal or its local statistics have unsaved progress. Retry save before restarting this deal, or cancel.".into()
+            } else {
+                "This deal or its local statistics have unsaved progress. Retry save before starting a new deal, or cancel.".into()
+            };
             return;
         }
         self.commit_pending_new_deal();
@@ -411,6 +467,7 @@ impl Controller {
             self.pending_new_deal = Some(request);
             return;
         };
+        let restarting = request.is_restart();
         let candidate = prospective_game(request, seed);
         let index = self.active_index();
         let saved = match &candidate {
@@ -441,28 +498,48 @@ impl Controller {
                 self.dirty[index] = false;
                 self.pending_new_deal_conflict = false;
                 self.clear_selections();
-                self.status = format!("New {} deal", self.game_name());
+                self.status = if restarting {
+                    format!("Restarted {} deal", self.game_name())
+                } else {
+                    format!("New {} deal", self.game_name())
+                };
             }
             Some(Err(error)) if error.committed_but_not_durable() => {
                 self.replace_game(candidate);
                 self.dirty[index] = true;
                 self.pending_new_deal_conflict = false;
                 self.clear_selections();
-                self.status = format!(
-                    "The new deal replaced the on-disk entry and is now current in memory, but durability is indeterminate: {error}"
-                );
+                self.status = if restarting {
+                    format!(
+                        "The restarted deal replaced the on-disk entry and is now current in memory, but durability is indeterminate: {error}"
+                    )
+                } else {
+                    format!(
+                        "The new deal replaced the on-disk entry and is now current in memory, but durability is indeterminate: {error}"
+                    )
+                };
             }
             Some(Err(error)) => {
                 self.pending_new_deal_conflict = error.is_conflict();
                 self.pending_new_deal = Some(request);
-                self.status = format!(
-                    "New deal was not started; the current game remains in memory because saving the prospective deal failed: {error}. Retry, discard, or cancel."
-                );
+                self.status = if restarting {
+                    format!(
+                        "Deal was not restarted; the current game remains in memory because saving the prospective restart failed: {error}. Retry, discard, or cancel."
+                    )
+                } else {
+                    format!(
+                        "New deal was not started; the current game remains in memory because saving the prospective deal failed: {error}. Retry, discard, or cancel."
+                    )
+                };
             }
             None => {
                 self.pending_new_deal_conflict = false;
                 self.pending_new_deal = Some(request);
-                self.status = "New deal was not started; the current game remains in memory because no writable save location is available. Retry, discard, or cancel.".into();
+                self.status = if restarting {
+                    "Deal was not restarted; the current game remains in memory because no writable save location is available. Retry, discard, or cancel.".into()
+                } else {
+                    "New deal was not started; the current game remains in memory because no writable save location is available. Retry, discard, or cancel.".into()
+                };
             }
         }
     }
@@ -516,6 +593,9 @@ impl Controller {
     }
 
     fn seed_for_new_deal(&mut self, request: PendingNewDeal) -> Option<u64> {
+        if let Some(seed) = request.restart_seed {
+            return Some(seed);
+        }
         match request.variant {
             NewDealVariant::FreeCell(FreeCellDeal::Exact(deal_number)) => {
                 if let Some(path) = self.deal_counters_path.as_deref() {
@@ -1033,18 +1113,29 @@ impl Controller {
 
     fn discard_progress_and_start_pending(&mut self) {
         if self.local_profile_dirty {
-            self.status =
+            self.status = if self
+                .pending_new_deal
+                .is_some_and(PendingNewDeal::is_restart)
+            {
+                "Local statistics remain unsaved; retry their save before restarting this deal"
+                    .into()
+            } else {
                 "Local statistics remain unsaved; retry their save before starting a new deal"
-                    .into();
+                    .into()
+            };
             return;
         }
         self.commit_pending_new_deal();
     }
 
     fn cancel_pending_new_deal(&mut self) {
-        if self.pending_new_deal.take().is_some() {
+        if let Some(request) = self.pending_new_deal.take() {
             self.pending_new_deal_conflict = false;
-            self.status = "New deal cancelled; current game preserved".into();
+            self.status = if request.is_restart() {
+                "Restart cancelled; current game preserved".into()
+            } else {
+                "New deal cancelled; current game preserved".into()
+            };
         } else {
             self.status = "No new deal is waiting for confirmation".into();
         }
@@ -1053,9 +1144,7 @@ impl Controller {
     fn confirm_missing_save_ownership(&mut self) {
         let index = self.active_index();
         if self.dirty[index] || self.pending_new_deal.is_none() || !self.pending_new_deal_conflict {
-            self.status =
-                "Missing-save ownership can only be refreshed for a clean pending deal conflict"
-                    .into();
+            self.status = "Missing-save ownership can only be refreshed for a clean pending deal-change conflict".into();
             return;
         }
         let path = match self.active {
@@ -1073,10 +1162,10 @@ impl Controller {
             Ok(None) => {
                 self.save_revisions[index] = None;
                 self.pending_new_deal_conflict = false;
-                self.status = "Confirmed under lock that the save is missing; ownership was refreshed. Retry or cancel the pending new deal.".into();
+                self.status = "Confirmed under lock that the save is missing; ownership was refreshed. Retry or cancel the pending deal change.".into();
             }
             Ok(Some(_)) => {
-                self.status = "The save path still exists; ownership was not changed. Reload the disk copy or cancel the pending new deal.".into();
+                self.status = "The save path still exists; ownership was not changed. Reload the disk copy or cancel the pending deal change.".into();
             }
             Err(error) => {
                 self.status = format!(
@@ -1176,7 +1265,7 @@ impl Controller {
         }
         if reload_game || reload_profile {
             self.status = if self.pending_new_deal.is_some() {
-                "Reloaded newer disk state and refreshed save ownership; retry or cancel the pending new deal".into()
+                "Reloaded newer disk state and refreshed save ownership; retry or cancel the pending deal change".into()
             } else {
                 "Reloaded newer disk state; in-memory changes were discarded".into()
             };
@@ -1233,6 +1322,7 @@ fn parse_klondike_variant(variant: &str) -> Option<NewDealVariant> {
         draw_mode,
         scoring,
         max_redeals,
+        timed: false,
     })
 }
 
@@ -1266,6 +1356,7 @@ fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
                 draw_mode,
                 scoring,
                 max_redeals,
+                timed,
             },
         ) => ProspectiveGame::Klondike(Game::new(
             seed,
@@ -1273,7 +1364,7 @@ fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
                 draw_mode,
                 scoring,
                 max_redeals,
-                timed: false,
+                timed,
             },
         )),
         (GameKind::Spider, NewDealVariant::Spider(mode)) => {
@@ -1586,24 +1677,35 @@ fn register_spider_freecell_handlers(app: &AppWindow, controller: &Rc<RefCell<Co
     }
 }
 
-fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller>>) {
-    let controller = Rc::clone(controller);
+fn register_deal_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller>>) {
     {
         let weak = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let controller = Rc::clone(controller);
+        app.on_restart_deal_requested(move || {
+            update(&weak, &controller, Controller::restart_current_deal);
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(controller);
         app.on_new_game(move |mode| {
             update(&weak, &controller, |state| state.new_game(mode.as_str()));
         });
     }
     {
         let weak = app.as_weak();
-        let controller = Rc::clone(&controller);
+        let controller = Rc::clone(controller);
         app.on_new_freecell_deal(move |deal_number| {
             update(&weak, &controller, |state| {
                 state.new_freecell_game(deal_number.as_str());
             });
         });
     }
+}
+
+fn register_toolbar_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller>>) {
+    register_deal_handlers(app, controller);
+    let controller = Rc::clone(controller);
     {
         let weak = app.as_weak();
         let controller = Rc::clone(&controller);
@@ -1712,6 +1814,11 @@ fn render(app: &AppWindow, controller: &Controller) {
         controller.dirty.iter().any(|dirty| *dirty) || controller.local_profile_dirty,
     );
     app.set_has_pending_new_deal(controller.pending_new_deal.is_some());
+    app.set_pending_deal_is_restart(
+        controller
+            .pending_new_deal
+            .is_some_and(PendingNewDeal::is_restart),
+    );
     app.set_has_pending_save_conflict(controller.pending_new_deal_conflict);
     app.set_status_text(controller.status.as_str().into());
     let statistics = controller
@@ -4593,6 +4700,231 @@ mod tests {
         remove_save(&path);
     }
 
+    struct RestartTestCase {
+        controller: Controller,
+        game_path: PathBuf,
+        counter_path: PathBuf,
+        profile_path: PathBuf,
+        counter_bytes: Vec<u8>,
+    }
+
+    fn prepared_restart_case(game: GameKind, name: &str, seed: u64) -> RestartTestCase {
+        let game_path = test_save(&format!("restart-{name}-game"));
+        let counter_path = test_save(&format!("restart-{name}-counters"));
+        let profile_path = test_save(&format!("restart-{name}-profile"));
+        for path in [&game_path, &counter_path, &profile_path] {
+            remove_save(path);
+        }
+        let mut controller = controller(seed);
+        controller.active = game;
+        if game == GameKind::Klondike {
+            controller.game = Game::new(
+                controller.game.state.seed,
+                Options {
+                    timed: true,
+                    ..controller.game.state.options
+                },
+            );
+        }
+        match game {
+            GameKind::Klondike => controller.save_path = Some(game_path.clone()),
+            GameKind::Spider => controller.spider_save_path = Some(game_path.clone()),
+            GameKind::FreeCell => controller.freecell_save_path = Some(game_path.clone()),
+            GameKind::TriPeaks => controller.tripeaks_save_path = Some(game_path.clone()),
+            GameKind::Pyramid => controller.pyramid_save_path = Some(game_path.clone()),
+        }
+        controller.deal_counters_path = Some(counter_path.clone());
+        controller.local_profile_path = Some(profile_path.clone());
+        assert_eq!(
+            ensure_deal_counters(&counter_path, controller.next_seeds).unwrap(),
+            controller.next_seeds
+        );
+        assert!(controller.save());
+        let counter_bytes = fs::read(&counter_path).unwrap();
+        RestartTestCase {
+            controller,
+            game_path,
+            counter_path,
+            profile_path,
+            counter_bytes,
+        }
+    }
+
+    fn progress_active_game(controller: &mut Controller) {
+        match controller.active {
+            GameKind::Klondike => {
+                controller.apply(controller.game.hint().unwrap());
+                controller.game.state.advance_time(37);
+                assert!(controller.save());
+            }
+            GameKind::Spider => controller.apply_spider(controller.spider.hint().unwrap()),
+            GameKind::FreeCell => controller.apply_freecell(controller.freecell.hint().unwrap()),
+            GameKind::TriPeaks => controller.apply_tripeaks(controller.tripeaks.hint().unwrap()),
+            GameKind::Pyramid => controller.apply_pyramid(controller.pyramid.hint().unwrap()),
+        }
+    }
+
+    fn restart_and_assert_exact_game(controller: &mut Controller, game_path: &Path) {
+        match controller.active {
+            GameKind::Klondike => {
+                let initial = Game::new(controller.game.state.seed, controller.game.state.options);
+                controller.restart_current_deal();
+                assert_eq!(controller.game, initial);
+                assert!(controller.game.state.options.timed);
+                assert_eq!(controller.game.state.elapsed_seconds, 0);
+                assert_eq!(load_klondike_revisioned(game_path).unwrap().0, initial);
+            }
+            GameKind::Spider => {
+                let initial =
+                    SpiderGame::new(controller.spider.state.seed, controller.spider.state.mode);
+                controller.restart_current_deal();
+                assert_eq!(controller.spider, initial);
+                assert_eq!(load_spider_revisioned(game_path).unwrap().0, initial);
+            }
+            GameKind::FreeCell => {
+                let initial = FreeCellGame::new(controller.freecell.state.deal_number);
+                controller.restart_current_deal();
+                assert_eq!(controller.freecell, initial);
+                assert_eq!(load_freecell_revisioned(game_path).unwrap().0, initial);
+            }
+            GameKind::TriPeaks => {
+                let initial = TriPeaksGame::new(
+                    controller.tripeaks.state.seed,
+                    controller.tripeaks.state.options,
+                );
+                controller.restart_current_deal();
+                assert_eq!(controller.tripeaks, initial);
+                assert_eq!(load_tripeaks_revisioned(game_path).unwrap().0, initial);
+            }
+            GameKind::Pyramid => {
+                let initial = PyramidGame::new(
+                    controller.pyramid.state.seed,
+                    controller.pyramid.state.options,
+                );
+                controller.restart_current_deal();
+                assert_eq!(controller.pyramid, initial);
+                assert_eq!(load_pyramid_revisioned(game_path).unwrap().0, initial);
+            }
+        }
+    }
+
+    fn assert_restart_case(mut case: RestartTestCase) {
+        progress_active_game(&mut case.controller);
+        let next_seeds = case.controller.next_seeds;
+        let profile = case.controller.local_profile.clone();
+        case.controller.selection = Some(Selection::Waste);
+        case.controller.spider_selection = Some(SpiderSelection {
+            column: 0,
+            count: 1,
+        });
+        case.controller.freecell_selection = Some(FreeCellSelection {
+            pile: freecell::Pile::FreeCell(0),
+            count: 1,
+        });
+        case.controller.pyramid_selection = Some(pyramid::Source::Waste);
+        restart_and_assert_exact_game(&mut case.controller, &case.game_path);
+        assert_eq!(
+            case.controller.status,
+            format!("Restarted {} deal", case.controller.game_name())
+        );
+        assert!(case.controller.pending_new_deal.is_none());
+        assert!(!case.controller.pending_new_deal_conflict);
+        assert!(!case.controller.dirty[case.controller.active_index()]);
+        assert!(!case.controller.can_undo());
+        assert!(!case.controller.can_redo());
+        assert!(case.controller.selection.is_none());
+        assert!(case.controller.spider_selection.is_none());
+        assert!(case.controller.freecell_selection.is_none());
+        assert!(case.controller.pyramid_selection.is_none());
+        assert_eq!(case.controller.next_seeds, next_seeds);
+        assert_eq!(fs::read(&case.counter_path).unwrap(), case.counter_bytes);
+        assert_eq!(case.controller.local_profile, profile);
+        assert_eq!(
+            solitaire::persistence::load_local_profile(&case.profile_path).unwrap(),
+            profile
+        );
+        for path in [&case.game_path, &case.counter_path, &case.profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            remove_save(path);
+        }
+    }
+
+    #[test]
+    fn restart_current_deal_preserves_seed_rules_counters_and_profile_for_all_games() {
+        for (game, name, seed) in [
+            (GameKind::Klondike, "klondike", 701),
+            (GameKind::Spider, "spider", 702),
+            (GameKind::FreeCell, "freecell", 703),
+            (GameKind::TriPeaks, "tripeaks", 704),
+            (GameKind::Pyramid, "pyramid", 705),
+        ] {
+            assert_restart_case(prepared_restart_case(game, name, seed));
+        }
+    }
+
+    #[test]
+    fn restart_without_a_writable_save_fails_closed_and_can_be_cancelled() {
+        let mut controller = controller(801);
+        let current = controller.game.clone();
+        let next_seeds = controller.next_seeds;
+
+        controller.restart_current_deal();
+
+        assert_eq!(controller.game, current);
+        assert_eq!(controller.next_seeds, next_seeds);
+        assert!(
+            controller
+                .pending_new_deal
+                .is_some_and(PendingNewDeal::is_restart)
+        );
+        assert!(controller.status.contains("no writable save location"));
+        controller.cancel_pending_new_deal();
+        assert_eq!(controller.game, current);
+        assert!(controller.pending_new_deal.is_none());
+        assert_eq!(
+            controller.status,
+            "Restart cancelled; current game preserved"
+        );
+    }
+
+    #[test]
+    fn restart_conflict_preserves_memory_then_reloads_and_retries_atomically() {
+        let path = test_save("restart-conflict");
+        remove_save(&path);
+        let mut controller = controller(802);
+        controller.save_path = Some(path.clone());
+        assert!(controller.save());
+        let current = controller.game.clone();
+        let mut external = current.clone();
+        external.apply(Action::Draw).unwrap();
+        let (_, external_revision) = load_klondike_revisioned(&path).unwrap();
+        let mut expected_external_revision = Some(external_revision);
+        save_klondike_checked(&path, &external, &mut expected_external_revision).unwrap();
+
+        controller.restart_current_deal();
+
+        assert_eq!(controller.game, current);
+        assert_eq!(load_klondike_revisioned(&path).unwrap().0, external);
+        assert!(controller.pending_new_deal_conflict);
+        assert!(
+            controller
+                .pending_new_deal
+                .is_some_and(PendingNewDeal::is_restart)
+        );
+        controller.reload_disk_copy();
+        assert_eq!(controller.game, external);
+        assert!(controller.pending_new_deal.is_some());
+        controller.retry_save();
+        assert_eq!(controller.game, current);
+        assert_eq!(load_klondike_revisioned(&path).unwrap().0, current);
+        assert!(controller.pending_new_deal.is_none());
+        assert!(!controller.pending_new_deal_conflict);
+        remove_save(&path);
+    }
+
     #[test]
     fn klondike_new_deal_choices_are_saved_and_reopen_with_exact_options() {
         for (choice, draw_mode, scoring, starting_score) in [
@@ -4741,6 +5073,7 @@ mod tests {
             parse_klondike_variant("Draw 1 · Standard · 1 redeal").map(|variant| PendingNewDeal {
                 game: GameKind::Klondike,
                 variant,
+                restart_seed: None,
             });
         assert_eq!(klondike_ui_options_for_render(&controller), None);
     }
@@ -4816,6 +5149,7 @@ mod tests {
                 == Some(PendingNewDeal {
                     game: GameKind::FreeCell,
                     variant: NewDealVariant::FreeCell(FreeCellDeal::Exact(42)),
+                    restart_seed: None,
                 })
         );
         controller.new_freecell_game(" 42");
@@ -5006,6 +5340,7 @@ mod tests {
         let hostile_pending = PendingNewDeal {
             game: GameKind::Klondike,
             variant: NewDealVariant::Pyramid { max_redeals: 2 },
+            restart_seed: None,
         };
         controller.pending_new_deal = Some(hostile_pending);
         controller.commit_pending_new_deal();

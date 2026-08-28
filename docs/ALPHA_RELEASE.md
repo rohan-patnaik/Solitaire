@@ -64,6 +64,15 @@ through the real notification service and an isolated Quickshell. See
 
 ## Demonstrated alpha workflows
 
+Every game now exposes a shared **Restart deal** action. Focused
+display-independent controller evidence progresses each game, restarts its exact
+seed/deal number and active options, reopens the atomically replaced mode-0600
+save, and preserves both next-deal counter bytes and local statistics. Missing
+save locations and stale-writer conflicts retain the current game with explicit
+cancel/reload/retry recovery. Restart intentionally starts a fresh replay
+history and is not itself an undoable move. The installed keyboard/AT-SPI gate
+remains open; see [`RESTART_CURRENT_DEAL_ACCEPTANCE.md`](RESTART_CURRENT_DEAL_ACCEPTANCE.md).
+
 Spider's one-, two-, and four-suit selector now synchronizes both value and
 index from a reopened save and reports the active mode separately from a dirty
 future choice. Focused controller evidence covers every mode, strict malformed
@@ -230,6 +239,9 @@ package files.
   remaining rule variants and installed selectors, broader hostile/property tests, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and installed
   TriPeaks rule selection remain incomplete or unverified.
+- The shared restart-current-deal control is automated source evidence only;
+  exact-package keyboard activation, AT-SPI semantics, status, and save/reopen
+  remain pending under the no-focus boundary.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
 - Long malformed-save and conflict messages use a dedicated full-width,

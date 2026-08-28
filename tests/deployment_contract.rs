@@ -70,12 +70,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
     assert!(metadata.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
     assert!(metadata.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
-    assert!(metadata.contains("actions/runs/33141845041"));
+    assert!(metadata.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
+    assert!(metadata.contains("actions/runs/33144862140"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
-    assert!(generated.contains("actions/runs/33141845041"));
+    assert!(generated.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
+    assert!(generated.contains("actions/runs/33144862140"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -616,6 +617,35 @@ fn tripeaks_restart_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_720FAB0.md"));
     assert!(catalog.contains("0.1.0.r0.g720fab0-1"));
+}
+
+#[test]
+fn pyramid_restart_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_478A10A.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "478a10a9aed6751c1cd9b90b0122d85faad021dd",
+        "720fab04ab3528d1e8e66768ebf47a85dc2f94b1",
+        "a08ac5814c3a352a536883019267af2fff3fc040",
+        "returned PASS with no actionable findings",
+        "briefly invoked a non-test Solitaire artifact",
+        "actions/runs/33144862140",
+        "job/98763550798",
+        "job/98763550953",
+        "solitaire-omarchy 0.1.0.r0.g478a10a-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "Nothing was enabled, summoned, focused, cycled, or restarted",
+        "Pyramid final-action and process/window identity remain",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 478a10a publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_478A10A.md"));
+    assert!(catalog.contains("0.1.0.r0.g478a10a-1"));
 }
 
 #[test]
@@ -1428,6 +1458,59 @@ fn local_statistics_surface_declares_scope_and_dirty_state_contracts() {
 }
 
 #[test]
+fn restart_current_deal_declares_keyboard_accessibility_and_recovery_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let evidence = include_str!("../docs/RESTART_CURRENT_DEAL_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "callback restart-deal-requested",
+        "text: \"Restart deal\"",
+        "Restart the current deal with the same deal number and rules",
+        "root.restart-deal-requested()",
+        "root.pending-deal-is-restart ? \"Discard and restart\" : \"Discard and start\"",
+        "Cancel the pending restart and preserve the current game",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing restart UI contract: {contract}"
+        );
+    }
+    for contract in [
+        "fn restart_current_deal(&mut self)",
+        "restart_seed: Some(self.game.state.seed)",
+        "timed: self.game.state.options.timed",
+        "restart_seed: Some(self.spider.state.seed)",
+        "restart_seed: Some(self.freecell.state.deal_number)",
+        "restart_seed: Some(self.tripeaks.state.seed)",
+        "restart_seed: Some(self.pyramid.state.seed)",
+        "if let Some(seed) = request.restart_seed",
+        "Restart cancelled; current game preserved",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing restart controller contract: {contract}"
+        );
+    }
+    for contract in [
+        "repository-defined seed or deal number",
+        "never reserves, increments, lowers, or rewrites a next-deal sequence",
+        "Restart is a deal boundary rather than a replay action",
+        "stale-writer conflict",
+        "mode-0600",
+        "exact packaged control has not been invoked",
+        "rows remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing restart evidence boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/RESTART_CURRENT_DEAL_ACCEPTANCE.md"));
+    assert!(catalog.contains("exact-package input remains open"));
+}
+
+#[test]
 fn unsaved_changes_have_retry_and_close_warning_contracts() {
     let ui = include_str!("../ui/app.slint");
     let controller = include_str!("../src/main.rs");
@@ -1440,11 +1523,13 @@ fn unsaved_changes_have_retry_and_close_warning_contracts() {
     assert!(ui.contains("has-pending-save-conflict"));
     assert!(ui.contains("Retry saving changes kept in memory"));
     assert!(ui.contains("Discard current unsaved progress and start the pending new deal"));
+    assert!(ui.contains("Discard current unsaved progress and restart this deal"));
     assert!(ui.contains("Cancel the pending new deal and preserve the current game"));
+    assert!(ui.contains("Cancel the pending restart and preserve the current game"));
     assert!(ui.contains("Refresh ownership only if a locked recheck confirms the save is missing"));
     assert!(ui.contains("Discard all unsaved progress and close Solitaire"));
     assert!(ui.contains("Discard in-memory changes and reload the newer disk copy"));
-    assert!(ui.contains("Reload the newer disk copy and resolve pending new deal ownership"));
+    assert!(ui.contains("Reload the newer disk copy and resolve pending deal-change ownership"));
     assert!(controller.contains("CloseRequestResponse::KeepWindowShown"));
     assert!(controller.contains("Unsaved changes remain"));
     assert!(controller.contains("commit_pending_new_deal"));
