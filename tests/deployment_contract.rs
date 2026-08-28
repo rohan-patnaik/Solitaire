@@ -68,12 +68,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("2ebbe7edaa0beb04588ead7897e38ecd35a70648"));
     assert!(metadata.contains("9dca631ad3ae5b3f6ca3fb1b35c355a259539c3b"));
     assert!(metadata.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
-    assert!(metadata.contains("actions/runs/33137835181"));
+    assert!(metadata.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
+    assert!(metadata.contains("actions/runs/33138972312"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("d23382b9ec62c7e18dcec9b84f13bb16072338b4"));
-    assert!(generated.contains("actions/runs/33137835181"));
+    assert!(generated.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
+    assert!(generated.contains("actions/runs/33138972312"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -407,7 +408,10 @@ fn tripeaks_wraparound_candidate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("tripeaks_wraparound_is_strict_atomic_reopenable_and_history_safe"));
-    assert!(catalog.contains("The exact installed final transition and rule-selection"));
+    assert!(
+        catalog
+            .contains("The exact installed final transition/process identity and rule-selection")
+    );
     assert!(catalog.contains("Published builds through a72f3ce reject and quarantine"));
     assert!(controller.contains("(GameKind::TriPeaks, \"Ace-King wrap\")"));
     assert!(controller.contains("fn tripeaks_ui_rule_for_render"));
@@ -554,6 +558,35 @@ fn klondike_restart_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_D23382B.md"));
     assert!(catalog.contains("0.1.0.r0.gd23382b-1"));
+}
+
+#[test]
+fn freecell_restart_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_0C806CB.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "0c806cbe8d26ed71bbef888620a5a77cbeaa12e1",
+        "d23382b9ec62c7e18dcec9b84f13bb16072338b4",
+        "5d3bc88b77952ab7057e2311dc28434dd2ffe646",
+        "full 205-test suite",
+        "signed off with no actionable findings",
+        "actions/runs/33138972312",
+        "job/98745289144",
+        "job/98745289065",
+        "solitaire-omarchy 0.1.0.r0.g0c806cb-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+        "FreeCell final-action and process/window identity gates remain",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 0c806cb publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_0C806CB.md"));
+    assert!(catalog.contains("0.1.0.r0.g0c806cb-1"));
 }
 
 #[test]
@@ -1007,7 +1040,12 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
         "Production `Game::from_replay` reconstructs 52 conserved cards",
         "TriPeaks complete — all three peaks are clear",
         "controller_completes_legal_tripeaks_replay_once_and_reopens",
+        "tripeaks_complete_deal_survives_normal_controller_restart",
         "exactly one played and one won observation",
+        "two fresh source processes",
+        "ten-second kill-and-",
+        "reap deadline, bounded diagnostics",
+        "task-root cleanup on success or unwind",
         "Remaining installed gate",
         "position 1, the sole remaining top card",
         "engine/callback index `0`",
@@ -1021,6 +1059,7 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
     for test in [
         "legal_seed_zero_replay_reaches_a_one_move_near_win",
         "controller_completes_legal_tripeaks_replay_once_and_reopens",
+        "tripeaks_complete_deal_survives_normal_controller_restart",
         "tripeaks_complete_deal_candidate_is_pinned_without_overclaim",
     ] {
         assert!(catalog.contains(test), "missing TriPeaks evidence: {test}");
@@ -1028,7 +1067,7 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
     assert!(catalog.contains(
         "{\"id\":\"game.tripeaks\",\"title\":\"Playable TriPeaks\",\"status\":\"partial\""
     ));
-    assert!(catalog.contains("The exact installed final transition"));
+    assert!(catalog.contains("exact installed final transition/process identity"));
     assert!(controller.contains("TriPeaks complete — all three peaks are clear"));
     assert!(ui.contains("callback tripeaks-tableau-activated(int)"));
     assert!(ui.contains("accessible-action-default => { root.activated(); }"));

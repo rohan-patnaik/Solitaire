@@ -114,9 +114,12 @@ TriPeaks deal zero has a checked-in normal Standard replay with 48 legal actions
 one exposed tableau card remaining. Production replay reconstruction and the
 controller's keyboard-routable final action prove the complete status, score,
 0600 game/profile persistence, exact one-time played/won observation,
-undo/redo idempotence, and loader-level reopen. This is candidate evidence;
-the exact installed final transition remains open under the desktop-safe input
-boundary. See
+undo/redo idempotence, and loader-level reopen. A bounded display-independent
+process gate additionally completes the deal through a fresh Controller,
+exits, and proves a second fresh Controller reopens byte-identical won-game and
+one-time profile files. This is source-process candidate evidence; the exact
+installed final transition and process/window identity remain open under the
+desktop-safe input boundary. See
 [`TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md`](TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md).
 
 FreeCell now accepts an explicit decimal deal number across the full `u64`

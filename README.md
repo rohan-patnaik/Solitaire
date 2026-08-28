@@ -87,9 +87,11 @@ The active game's local statistics count a deal as played on its first successfu
   layout exposes the active rule, deal, stock, waste, streak score, move count,
   hints, and win status without copying vendor presentation.
 - A checked-in normal seed-zero TriPeaks replay reconstructs to one legal move
-  before victory and exercises the final status, atomic save/reopen, undo/redo,
-  and one-time local played/won accounting. Exact-package final-action
-  acceptance remains open.
+  before victory. A bounded display-independent lifecycle gate starts a fresh
+  Controller, exercises the final removal, score, atomic persistence and
+  undo/redo, exits, then proves a second fresh Controller reopens byte-identical
+  won-game and one-time profile files. Exact-package final-action and
+  process/window acceptance remain open.
 
 ## Omarchy plugin
 

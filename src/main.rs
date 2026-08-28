@@ -3975,6 +3975,120 @@ mod tests {
         remove_save(&profile_path);
     }
 
+    fn exercise_tripeaks_restart_child(phase: &str) {
+        let mut restarted = Controller::new();
+        assert_eq!(restarted.tripeaks.state.seed, 0);
+        assert!(restarted.pending_new_deal.is_none());
+        restarted.select_game("TriPeaks");
+        assert!(!restarted.dirty[restarted.active_index()]);
+
+        if phase == "complete" {
+            assert!(!restarted.tripeaks.state.is_won());
+            assert_eq!(restarted.tripeaks.state.moves, 48);
+            assert_eq!(restarted.tripeaks.state.score, 5_700);
+            assert_eq!(
+                restarted
+                    .local_profile
+                    .statistics(ProfileGameKind::TriPeaks),
+                solitaire::profile::GameStatistics::default()
+            );
+            restarted.activate_tripeaks_card(0);
+            assert_eq!(
+                restarted.status,
+                "TriPeaks complete — all three peaks are clear"
+            );
+            assert!(restarted.tripeaks.state.is_won());
+            restarted.undo();
+            assert!(!restarted.tripeaks.state.is_won());
+            restarted.redo();
+            assert!(restarted.tripeaks.state.is_won());
+            return;
+        }
+
+        assert_eq!(phase, "reopen");
+        assert!(restarted.tripeaks.state.is_won());
+        assert_eq!(restarted.tripeaks.state.moves, 49);
+        assert_eq!(restarted.tripeaks.state.score, 5_800);
+        assert_eq!(
+            restarted
+                .local_profile
+                .statistics(ProfileGameKind::TriPeaks),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+        restarted.observe_active_profile();
+    }
+
+    #[test]
+    fn tripeaks_complete_deal_survives_normal_controller_restart() {
+        const PHASE: &str = "SOLITAIRE_TRIPEAKS_COMPLETE_RESTART_PHASE";
+        const ROOT: &str = "SOLITAIRE_TRIPEAKS_COMPLETE_RESTART_ROOT";
+        const TOKEN: &str = "SOLITAIRE_TRIPEAKS_COMPLETE_RESTART_TOKEN";
+        if let Ok(phase) = std::env::var(PHASE) {
+            validate_restart_child_root(ROOT, TOKEN);
+            exercise_tripeaks_restart_child(&phase);
+            return;
+        }
+
+        let restart_root = create_restart_root("tripeaks-complete");
+        let data = restart_root.path().join("solitaire");
+        let game_path = data.join("tripeaks-save.json");
+        let profile_path = data.join("local-profile.json");
+        fs::write(
+            &game_path,
+            include_bytes!("../tests/fixtures/tripeaks-seed-zero-near-win.json"),
+        )
+        .unwrap();
+        fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        run_restart_phase(
+            restart_root.path(),
+            "complete",
+            restart_root.token(),
+            "tests::tripeaks_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        let completed_save = fs::read(&game_path).unwrap();
+        let completed_profile = fs::read(&profile_path).unwrap();
+        let completed = load_tripeaks_revisioned(&game_path).unwrap().0;
+        assert!(completed.state.is_won());
+        assert_eq!(completed.state.moves, 49);
+        assert_eq!(completed.state.score, 5_800);
+        assert_eq!(
+            load_local_profile_revisioned(&profile_path)
+                .unwrap()
+                .0
+                .statistics(ProfileGameKind::TriPeaks),
+            solitaire::profile::GameStatistics {
+                deals_played: 1,
+                deals_won: 1,
+                latest_played_deal: Some(0),
+                latest_won_deal: Some(0),
+            }
+        );
+
+        run_restart_phase(
+            restart_root.path(),
+            "reopen",
+            restart_root.token(),
+            "tests::tripeaks_complete_deal_survives_normal_controller_restart",
+            [PHASE, ROOT, TOKEN],
+        );
+        assert_eq!(fs::read(&game_path).unwrap(), completed_save);
+        assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
+        for path in [&game_path, &profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        restart_root.finish();
+    }
+
     #[test]
     fn pyramid_surface_routes_standard_play_history_and_reopen() {
         let path = test_save("pyramid-surface");

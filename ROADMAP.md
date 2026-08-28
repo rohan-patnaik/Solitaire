@@ -33,10 +33,11 @@ Functional parity is achievable for the five core games and common collection fe
   Standard and optional Ace-King wrap rules, numbered deals, undo/redo, hints,
   replay save/resume, bounded recovery, and declared keyboard/accessibility
   semantics. A normal Standard seed-zero replay reaches a one-move near-win and
-  its controller final transition persists the win/profile exactly once across
-  undo, redo, and reopen. Exact-package final-action and rule-selection
-  acceptance plus broader hostile/property evidence remain open, so the
-  capability stays Partial.
+  a bounded subprocess gate persists its final transition, score, and one-time
+  profile across undo/redo, process exit, and a second fresh Controller's byte-
+  identical reopen. Exact-package final-action/process-identity and rule-
+  selection acceptance plus broader hostile/property evidence remain open, so
+  the capability stays Partial.
 - Pyramid now has a playable original Slint surface backed by its deterministic engine, with sequential numbered deals, pair-to-13 and king removal, selectable zero-, one-, or two-redeal bounds, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Focused headless evidence covers strict selection, exhaustion, hostile inputs, atomic dirty confirmation, save/reopen, undo/redo, and persisted custom bounds. A normal seed-zero replay reaches a one-pair near-win and its controller final transition persists the win/profile exactly once across undo, redo, and reopen. Exact-package rule-selection/final-action acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - A bounded anonymous device-local profile now records per-game deals played and won from proven controller lifecycle transitions. Named profiles, achievements, streaks, import/export, sync, broader collection workflows, and release-quality work remain open.
 - Real Omarchy/Wayland acceptance at exact published SHA `f6b0cb7e55d296bdf77714efc48a1775b858c041` verified an installed legal mutation and save/reopen in all five games, local-profile recovery and conflict handling, live plugin summon, shell responsiveness, and detached native-process survival across a supported shell restart. A focused exact-package pass at `d20ba41` subsequently accepted all three Spider suit modes and the keyboard/AT-SPI long-status workflow. At `4b31024`, the exact plugin's normal launch plus isolated live missing-binary and immediate-exit-42 notification paths passed, closing only the launcher row. The scopes and open alpha limits are recorded in `docs/ALPHA_RELEASE.md`.
@@ -74,8 +75,9 @@ Functional parity is achievable for the five core games and common collection fe
 - Touch-friendly targets without imitating Microsoft layouts.
 - Standard and Ace-King-wrap TriPeaks are playable through the original Slint
   layout, with strict atomic rule selection/save/reopen evidence and a pinned
-  normal Standard complete-deal candidate. Installed rule selection and final
-  transitions, touch/platform acceptance, and broader evidence remain open.
+  normal Standard complete-deal candidate whose win/profile survives two fresh
+  Controller processes. Installed rule selection and final transitions,
+  touch/platform acceptance, and broader evidence remain open.
 - Pyramid is playable through an original seven-row Slint layout with zero-, one-, and two-redeal choices, strict atomic persistence evidence, and a pinned normal complete-deal candidate with controller lifecycle proof. Its installed rule-selection/final-transition gates, solvability metadata, other rule variants, touch/platform acceptance, and broader evidence remain open.
 
 ### M4 — collection layer
