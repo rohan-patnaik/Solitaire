@@ -1391,13 +1391,21 @@ impl Controller {
     fn autocomplete(&mut self) {
         if self.active == GameKind::Klondike {
             self.clear_selections();
-            let count = self.game.autocomplete();
-            self.status = if count == 1 {
-                "Moved 1 safe card to a foundation".into()
-            } else {
-                format!("Moved {count} safe cards to foundations")
+            let outcome = self.game.autocomplete();
+            self.status = match (outcome.completed, outcome.error) {
+                (0, Some(error)) => friendly_error(error),
+                (1, Some(error)) => format!(
+                    "Moved 1 safe card to a foundation; {}",
+                    friendly_error(error)
+                ),
+                (count, Some(error)) => format!(
+                    "Moved {count} safe cards to foundations; {}",
+                    friendly_error(error)
+                ),
+                (1, None) => "Moved 1 safe card to a foundation".into(),
+                (count, None) => format!("Moved {count} safe cards to foundations"),
             };
-            if count > 0 {
+            if outcome.completed > 0 {
                 self.persist_mutation();
             }
         }

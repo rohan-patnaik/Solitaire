@@ -20,6 +20,11 @@ to the rules that decide whether a foundation move is safe.
 - Each moved card remains one ordinary replay action. Undo and redo therefore
   remain per card; this slice does not introduce grouped history or a schema
   change.
+- The existing 4,096-action replay limit is fail-closed. If no capacity remains,
+  the legal safe move is left untouched and the recovery status asks for a new
+  deal. If capacity expires after some safe moves, those ordinary replay actions
+  are saved and the status reports both the exact partial count and the same
+  recovery instruction.
 
 ## Display-independent evidence
 
@@ -29,7 +34,9 @@ selection clearing, card conservation, win state, checked game/profile saves,
 one-time statistics, undo/redo, byte-identical no-op behavior, and loader-level
 reopen. A stale-writer test proves that the completed in-memory game remains
 dirty and the external disk owner remains byte-identical until explicit reload
-chooses the newer disk state.
+chooses the newer disk state. Domain boundary coverage proves both zero
+remaining replay capacity and one remaining slot with multiple safe moves,
+including unchanged state before the first move and an exact applied prefix.
 
 The deployment contract pins the visible label, accessible label, controller
 route, bounded domain loop, recovery language, and this evidence boundary.

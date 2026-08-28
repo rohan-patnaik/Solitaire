@@ -232,6 +232,12 @@ pub struct ReplaySetup {
     pub elapsed_seconds: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutocompleteOutcome {
+    pub completed: usize,
+    pub error: Option<MoveError>,
+}
+
 impl ReplaySetup {
     fn validate(self) -> Result<(), MoveError> {
         if !self.options.timed && self.elapsed_seconds != 0 {
@@ -458,16 +464,22 @@ impl Game {
     }
 
     /// Moves every currently available card to a foundation until no progress
-    /// is possible, returning the number of moves made.
-    pub fn autocomplete(&mut self) -> usize {
+    /// is possible, returning both the number moved and any blocking error.
+    pub fn autocomplete(&mut self) -> AutocompleteOutcome {
         let mut completed = 0;
         while let Some(action) = self.foundation_hint() {
-            if self.apply(action).is_err() {
-                break;
+            if let Err(error) = self.apply(action) {
+                return AutocompleteOutcome {
+                    completed,
+                    error: Some(error),
+                };
             }
             completed += 1;
         }
-        completed
+        AutocompleteOutcome {
+            completed,
+            error: None,
+        }
     }
 
     fn apply_to_state(&mut self, action: &Action) -> Result<(), MoveError> {
@@ -941,13 +953,76 @@ mod tests {
             card: card(Suit::Hearts, Rank::Three),
             face_up: true,
         });
-        assert_eq!(game.autocomplete(), 0);
+        assert_eq!(
+            game.autocomplete(),
+            AutocompleteOutcome {
+                completed: 0,
+                error: None,
+            }
+        );
 
         for suit in [Suit::Clubs, Suit::Spades] {
             game.state.foundations[suit_index(suit)] =
                 vec![card(suit, Rank::Ace), card(suit, Rank::Two)];
         }
-        assert_eq!(game.autocomplete(), 1);
+        assert_eq!(
+            game.autocomplete(),
+            AutocompleteOutcome {
+                completed: 1,
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn autocomplete_reports_replay_capacity_before_and_during_safe_moves() {
+        let mut at_limit = empty_game(Options::default());
+        at_limit.state.tableau[0].push(TableauCard {
+            card: card(Suit::Hearts, Rank::Ace),
+            face_up: true,
+        });
+        at_limit.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS];
+        let before = at_limit.state.clone();
+        assert_eq!(
+            at_limit.autocomplete(),
+            AutocompleteOutcome {
+                completed: 0,
+                error: Some(MoveError::ResourceLimit),
+            }
+        );
+        assert_eq!(at_limit.state, before);
+
+        let mut one_slot = empty_game(Options::default());
+        one_slot.state.tableau[0].push(TableauCard {
+            card: card(Suit::Hearts, Rank::Ace),
+            face_up: true,
+        });
+        one_slot.state.tableau[1].push(TableauCard {
+            card: card(Suit::Clubs, Rank::Ace),
+            face_up: true,
+        });
+        one_slot.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS - 1];
+        assert_eq!(
+            one_slot.autocomplete(),
+            AutocompleteOutcome {
+                completed: 1,
+                error: Some(MoveError::ResourceLimit),
+            }
+        );
+        assert_eq!(one_slot.actions.len(), crate::replay::MAX_REPLAY_ACTIONS);
+        assert_eq!(
+            one_slot
+                .state
+                .foundations
+                .iter()
+                .map(Vec::len)
+                .sum::<usize>(),
+            1
+        );
+        assert_eq!(
+            one_slot.state.tableau.iter().map(Vec::len).sum::<usize>(),
+            1
+        );
     }
 
     #[test]

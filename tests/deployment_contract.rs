@@ -1879,7 +1879,9 @@ fn klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts() {
     for contract in [
         "fn autocomplete(&mut self)",
         "self.clear_selections();",
-        "let count = self.game.autocomplete();",
+        "let outcome = self.game.autocomplete();",
+        "(0, Some(error)) => friendly_error(error)",
+        "if outcome.completed > 0",
         "Moved 1 safe card to a foundation",
         "Moved {count} safe cards to foundations",
         "klondike_safe_finish_is_atomic_reopenable_and_history_safe",
@@ -1893,8 +1895,10 @@ fn klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts() {
     }
     for contract in [
         "while let Some(action) = self.foundation_hint()",
-        "if self.apply(action).is_err()",
+        "if let Err(error) = self.apply(action)",
+        "error: Some(error)",
         "completed += 1",
+        "autocomplete_reports_replay_capacity_before_and_during_safe_moves",
     ] {
         assert!(
             domain.contains(contract),
@@ -1906,6 +1910,8 @@ fn klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts() {
         "bounded by the 52-card deck",
         "write-free no-op",
         "checked mode-0600 save",
+        "4,096-action replay limit is fail-closed",
+        "exact partial count",
         "remain per card;",
         "stale-writer test",
         "variable-sized payload.",
@@ -1917,8 +1923,33 @@ fn klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts() {
             "missing safe-finish evidence boundary: {contract}"
         );
     }
-    assert!(catalog.contains("docs/KLONDIKE_SAFE_FINISH_ACCEPTANCE.md"));
-    assert!(catalog.contains("klondike_safe_finish_is_atomic_reopenable_and_history_safe"));
+    let catalog: serde_json::Value = serde_json::from_str(catalog).unwrap();
+    for id in [
+        "game.klondike",
+        "quality.accessibility",
+        "quality.real-omarchy",
+    ] {
+        let row = catalog["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap_or_else(|| panic!("missing safe-finish capability row: {id}"));
+        assert!(
+            row["paths"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|path| path == "docs/KLONDIKE_SAFE_FINISH_ACCEPTANCE.md")
+        );
+        assert!(
+            row["tests"].as_array().unwrap().iter().any(|test| test
+                == "klondike_safe_finish_declares_atomic_keyboard_and_recovery_contracts")
+        );
+        let limits = row["limits"].as_str().unwrap();
+        assert!(limits.contains("Finish safe moves"));
+        assert!(limits.contains("Exact-package"));
+    }
 }
 
 #[test]
