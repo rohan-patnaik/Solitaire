@@ -659,6 +659,8 @@ fn klondike_complete_deal_candidate_is_pinned_without_overclaim() {
         "two fresh source processes",
         "ten-second monotonic deadline",
         "8 KiB per stream",
+        "complete task-owned root",
+        "fails the test visibly",
         "continuously preserves the active desktop",
         "rows Partial",
     ] {

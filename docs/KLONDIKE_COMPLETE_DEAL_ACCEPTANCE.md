@@ -48,7 +48,10 @@ profile reopen byte-for-byte. Each child first verifies that `XDG_DATA_HOME`
 matches a parent-created canonical temporary root beneath the system temporary
 directory and that its mode-0600 PID/nanosecond nonce marker matches. Every
 phase has a ten-second monotonic deadline; a stalled child is killed and reaped,
-and captured diagnostics are bounded to 8 KiB per stream.
+and captured diagnostics are bounded to 8 KiB per stream. A scoped guard checks
+the ownership marker and removes the complete task-owned root, including
+unexpected quarantine or temporary residue, on success or unwinding; a cleanup
+failure on the successful path fails the test visibly.
 
 This is display-independent source-process lifecycle evidence. It is not the
 installed process/window identity or final input gate below.

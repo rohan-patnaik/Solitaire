@@ -3021,8 +3021,8 @@ mod tests {
             return;
         }
 
-        let (root, token, marker) = create_restart_root("klondike");
-        let data = root.join("solitaire");
+        let restart_root = create_restart_root("klondike");
+        let data = restart_root.path().join("solitaire");
         let game_path = data.join("klondike-save.json");
         let profile_path = data.join("local-profile.json");
         let envelope: serde_json::Value = serde_json::from_str(include_str!(
@@ -3035,9 +3035,9 @@ mod tests {
         solitaire::persistence::save_klondike(&game_path, &staged).unwrap();
 
         run_restart_phase(
-            &root,
+            restart_root.path(),
             "complete",
-            &token,
+            restart_root.token(),
             "tests::klondike_complete_deal_survives_normal_controller_restart",
             [PHASE, ROOT, TOKEN],
         );
@@ -3052,15 +3052,15 @@ mod tests {
         );
 
         run_restart_phase(
-            &root,
+            restart_root.path(),
             "reopen",
-            &token,
+            restart_root.token(),
             "tests::klondike_complete_deal_survives_normal_controller_restart",
             [PHASE, ROOT, TOKEN],
         );
         assert_eq!(fs::read(&game_path).unwrap(), completed_save);
         assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
-        cleanup_restart_root(&root, &marker);
+        restart_root.finish();
     }
 
     #[test]
@@ -3243,7 +3243,53 @@ mod tests {
         isolated_root
     }
 
-    fn create_restart_root(game: &str) -> (PathBuf, String, PathBuf) {
+    struct RestartRoot {
+        path: PathBuf,
+        token: String,
+        marker_ready: bool,
+        cleaned: bool,
+    }
+
+    impl RestartRoot {
+        fn path(&self) -> &Path {
+            &self.path
+        }
+
+        fn token(&self) -> &str {
+            &self.token
+        }
+
+        fn owns_path(&self) -> bool {
+            let marker = self.path.join(".restart-token");
+            fs::symlink_metadata(&marker).is_ok_and(|metadata| {
+                metadata.file_type().is_file()
+                    && metadata.permissions().mode() & 0o777 == 0o600
+                    && fs::read_to_string(marker).is_ok_and(|token| token == self.token)
+            })
+        }
+
+        fn finish(mut self) {
+            assert!(self.owns_path(), "restart root ownership marker changed");
+            fs::remove_dir_all(&self.path).unwrap_or_else(|error| {
+                panic!(
+                    "failed to remove restart root {}: {error}",
+                    self.path.display()
+                )
+            });
+            self.cleaned = true;
+        }
+    }
+
+    impl Drop for RestartRoot {
+        fn drop(&mut self) {
+            if self.cleaned || (self.marker_ready && !self.owns_path()) {
+                return;
+            }
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn create_restart_root(game: &str) -> RestartRoot {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -3253,29 +3299,35 @@ mod tests {
             "solitaire-controller-{}-{nonce}-{game}-restart",
             std::process::id(),
         ));
-        fs::create_dir_all(root.join("solitaire")).unwrap();
-        let marker = root.join(".restart-token");
-        fs::write(&marker, &token).unwrap();
+        fs::create_dir(&root).unwrap();
+        let mut restart_root = RestartRoot {
+            path: root,
+            token,
+            marker_ready: false,
+            cleaned: false,
+        };
+        fs::create_dir(restart_root.path.join("solitaire")).unwrap();
+        let marker = restart_root.path.join(".restart-token");
+        fs::write(&marker, &restart_root.token).unwrap();
         fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
-        (root, token, marker)
+        restart_root.marker_ready = true;
+        restart_root
     }
 
-    fn cleanup_restart_root(root: &Path, marker: &Path) {
-        let data = root.join("solitaire");
-        for name in [
-            "klondike-save.json",
-            "spider-save.json",
-            "freecell-save.json",
-            "tripeaks-save.json",
-            "pyramid-save.json",
-            "deal-counters.json",
-            "local-profile.json",
-        ] {
-            remove_save(&data.join(name));
-        }
-        remove_save(marker);
-        let _ = fs::remove_dir(&data);
-        let _ = fs::remove_dir(root);
+    #[test]
+    fn restart_root_guard_removes_unexpected_residue_on_unwind() {
+        let restart_root = create_restart_root("cleanup");
+        let root = restart_root.path().to_path_buf();
+        let residue = root
+            .join("solitaire")
+            .join("klondike-save.json.corrupt-test");
+        let result = std::panic::catch_unwind(move || {
+            let _restart_root = restart_root;
+            fs::write(residue, b"preserved test residue").unwrap();
+            panic!("exercise restart-root unwind cleanup");
+        });
+        assert!(result.is_err());
+        assert!(!root.exists());
     }
 
     fn run_restart_phase(
@@ -3331,8 +3383,8 @@ mod tests {
             return;
         }
 
-        let (root, token, marker) = create_restart_root("spider");
-        let data = root.join("solitaire");
+        let restart_root = create_restart_root("spider");
+        let data = restart_root.path().join("solitaire");
         let game_path = data.join("spider-save.json");
         let profile_path = data.join("local-profile.json");
         fs::write(
@@ -3343,9 +3395,9 @@ mod tests {
         fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
 
         run_restart_phase(
-            &root,
+            restart_root.path(),
             "complete",
-            &token,
+            restart_root.token(),
             "tests::spider_complete_deal_survives_normal_controller_restart",
             [CHILD_PHASE, CHILD_ROOT, CHILD_TOKEN],
         );
@@ -3366,9 +3418,9 @@ mod tests {
         );
 
         run_restart_phase(
-            &root,
+            restart_root.path(),
             "reopen",
-            &token,
+            restart_root.token(),
             "tests::spider_complete_deal_survives_normal_controller_restart",
             [CHILD_PHASE, CHILD_ROOT, CHILD_TOKEN],
         );
@@ -3381,7 +3433,7 @@ mod tests {
             );
         }
 
-        cleanup_restart_root(&root, &marker);
+        restart_root.finish();
     }
 
     #[test]
