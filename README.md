@@ -34,9 +34,12 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
 - Use the focusable toolbar controls for undo, redo, a deterministic hint, or safe foundation moves.
 - Card and empty-slot controls declare assistive-technology names/default actions, accept Tab focus plus Space/Enter activation, and declare status changes as a polite live region. Focused installed passes exercised these semantics through keyboard input and AT-SPI; full keyboard-only traversal, spoken screen-reader output, and gamepad navigation remain M5 work.
 - Choose draw one or draw three, Standard or Vegas scoring, and unlimited, one,
-  or three stock redeals before starting a new deal. Vegas starts at -52 and
-  awards five points per foundation card. The current redeal count and bounded
-  remainder stay visible; timed play is not yet exposed.
+  or three stock redeals plus Untimed or Timed play before starting a new deal.
+  Vegas starts at -52 and awards five points per foundation card. The current
+  redeal count, bounded remainder, and timed `HH:MM:SS` clock stay visible.
+  Timed progress pauses outside active Klondike, during pending deal changes,
+  and after a win; atomic checkpoints run every 15 seconds and before leaving
+  the game or closing. Time is informational and does not alter scoring.
 - A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
   foundation move before victory. A bounded display-independent lifecycle gate
   starts a fresh Controller, exercises the final tableau/foundation route,

@@ -153,6 +153,10 @@ export component AppWindow inherits Window {
     in-out property <int> klondike-scoring-index: 0;
     in-out property <string> klondike-redeal-limit: "Unlimited";
     in-out property <int> klondike-redeal-index: 0;
+    in-out property <string> klondike-timing-mode: "Untimed";
+    in-out property <int> klondike-timing-index: 0;
+    in property <bool> klondike-timed-active;
+    in property <string> elapsed-time: "00:00:00";
     in-out property <string> spider-suit-mode: "1 suit";
     in-out property <int> spider-suit-index: 0;
     in property <string> spider-suit-mode-active: "1 suit";
@@ -244,7 +248,11 @@ export component AppWindow inherits Window {
                             : (root.game-kind == "Pyramid"
                                 ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number + "     Redeals  " + root.redeals + "/" + root.pyramid-max-redeals-active
                                 : "Score  " + root.score + "     Moves  " + root.moves + "     Redeals  " + root.redeals
-                                    + (root.redeals-remaining < 0 ? " / unlimited" : "     Remaining  " + root.redeals-remaining))));
+                                    + (root.redeals-remaining < 0 ? " / unlimited" : "     Remaining  " + root.redeals-remaining)
+                                    + (root.klondike-timed-active ? "     Time  " + root.elapsed-time : ""))));
+                accessible-label: root.game-kind == "Klondike" && root.klondike-timed-active
+                    ? "Klondike score " + root.score + ", moves " + root.moves + ", elapsed time " + root.elapsed-time
+                    : "Game status summary";
                 color: #dce9e3;
                 font-size: 17px;
                 vertical-alignment: center;
@@ -388,12 +396,19 @@ export component AppWindow inherits Window {
                 enabled: !root.has-pending-new-deal;
                 accessible-label: "Stock redeal limit for a new Klondike deal";
             }
+            timing-mode := ComboBox {
+                model: ["Untimed", "Timed"];
+                current-value <=> root.klondike-timing-mode;
+                current-index <=> root.klondike-timing-index;
+                enabled: !root.has-pending-new-deal;
+                accessible-label: "Timing mode for a new Klondike deal";
+            }
             Button {
                 text: "New deal";
                 enabled: !root.has-pending-new-deal;
                 accessible-label: "Start a new Klondike deal";
                 clicked => {
-                    root.new-game(root.klondike-draw-mode + " · " + root.klondike-scoring-mode + " · " + root.klondike-redeal-limit);
+                    root.new-game(root.klondike-draw-mode + " · " + root.klondike-scoring-mode + " · " + root.klondike-redeal-limit + " · " + root.klondike-timing-mode);
                 }
             }
             Rectangle { horizontal-stretch: 1; }

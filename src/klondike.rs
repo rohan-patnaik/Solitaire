@@ -289,7 +289,11 @@ impl Game {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
+        let elapsed_seconds = self.state.elapsed_seconds;
         self.redo.push(std::mem::replace(&mut self.state, previous));
+        if self.state.options.timed {
+            self.state.elapsed_seconds = elapsed_seconds;
+        }
         if let Some(action) = self.actions.pop() {
             self.redo_actions.push(action);
         }
@@ -300,7 +304,11 @@ impl Game {
         let Some(next) = self.redo.pop() else {
             return false;
         };
+        let elapsed_seconds = self.state.elapsed_seconds;
         push_bounded_history(&mut self.undo, std::mem::replace(&mut self.state, next));
+        if self.state.options.timed {
+            self.state.elapsed_seconds = elapsed_seconds;
+        }
         if let Some(action) = self.redo_actions.pop() {
             self.actions.push(action);
         }
@@ -1131,6 +1139,27 @@ mod tests {
         let rebuilt = Game::from_replay(&game.replay()).unwrap();
         assert_eq!(rebuilt.state, game.state);
         assert_eq!(rebuilt.state.options, options);
+    }
+
+    #[test]
+    fn timed_elapsed_seconds_do_not_rewind_through_undo_or_redo() {
+        let mut game = Game::new(
+            315,
+            Options {
+                timed: true,
+                ..Options::default()
+            },
+        );
+        game.apply(Action::Draw).unwrap();
+        game.state.advance_time(37);
+
+        assert!(game.undo());
+        assert_eq!(game.state.elapsed_seconds, 37);
+        game.state.advance_time(5);
+        assert!(game.redo());
+        assert_eq!(game.state.elapsed_seconds, 42);
+        game.validate().unwrap();
+        assert_eq!(Game::from_replay(&game.replay()).unwrap().state, game.state);
     }
 
     #[test]

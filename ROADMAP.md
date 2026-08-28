@@ -22,8 +22,10 @@ Functional parity is achievable for the five core games and common collection fe
 - M0 foundation is implemented and covered by CI, exact-revision Arch packaging checks, provenance records, and launcher contract tests. The detached Omarchy launcher's normal, missing-binary, immediate-startup-failure, and shell-restart workflows have exact live evidence and are Complete; packaging and persistence safety retain their separate Partial gaps.
 - Klondike has a playable vertical slice. Its new-deal controls expose draw-one,
   draw-three, Standard and Vegas scoring, plus unlimited, one, or three stock
-  redeals; the chosen bound is enforced and preserved across save/reopen. Both
-  scoring modes currently remain untimed. A normal seed-zero default replay
+  redeals and timed or untimed play; every choice is preserved across
+  save/reopen. Timed play exposes an informational elapsed clock, pauses outside
+  active play, checkpoints atomically, and remains monotonic across undo/redo.
+  Timed score bonuses or penalties are not implemented. A normal seed-zero default replay
   reaches a one-move near-win; a bounded subprocess gate persists its final
   transition and one-time profile across undo/redo, process exit, and a second
   fresh Controller's byte-identical reopen. The exact-package final transition,
@@ -65,6 +67,10 @@ Functional parity is achievable for the five core games and common collection fe
 - Unlimited, one-, and three-redeal choices are keyboard/accessibility-declared,
   atomically saved, enforced at exhaustion, and reopened exactly. Exact-package
   selection and visible remaining-count acceptance remain open.
+- Timed and untimed new deals are keyboard/accessibility-declared. The bounded
+  clock, pause rules, atomic checkpoints, stale-writer recovery, and monotonic
+  undo/redo behavior have display-independent evidence; exact-package selector,
+  visible clock, and AT-SPI acceptance remain open.
 
 ### M2 — Spider and FreeCell
 

@@ -71,12 +71,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("0c806cbe8d26ed71bbef888620a5a77cbeaa12e1"));
     assert!(metadata.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
     assert!(metadata.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
-    assert!(metadata.contains("actions/runs/33144862140"));
+    assert!(metadata.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
+    assert!(metadata.contains("actions/runs/33150141503"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
-    assert!(generated.contains("actions/runs/33144862140"));
+    assert!(generated.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
+    assert!(generated.contains("actions/runs/33150141503"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -114,16 +115,19 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
         "model: [\"Draw 1\", \"Draw 3\"]",
         "model: [\"Standard\", \"Vegas\"]",
         "model: [\"Unlimited\", \"1 redeal\", \"3 redeals\"]",
+        "model: [\"Untimed\", \"Timed\"]",
         "accessible-label: \"Draw mode for a new Klondike deal\"",
         "accessible-label: \"Scoring mode for a new Klondike deal\"",
         "accessible-label: \"Stock redeal limit for a new Klondike deal\"",
+        "accessible-label: \"Timing mode for a new Klondike deal\"",
         "accessible-label: \"Start a new Klondike deal\"",
         "current-index <=> root.klondike-draw-index",
         "current-index <=> root.klondike-scoring-index",
         "current-index <=> root.klondike-redeal-index",
+        "current-index <=> root.klondike-timing-index",
         "text: \"Next Klondike deal\"",
         "enabled: !root.has-pending-new-deal",
-        "root.new-game(root.klondike-draw-mode + \" · \" + root.klondike-scoring-mode + \" · \" + root.klondike-redeal-limit)",
+        "root.new-game(root.klondike-draw-mode + \" · \" + root.klondike-scoring-mode + \" · \" + root.klondike-redeal-limit + \" · \" + root.klondike-timing-mode)",
     ] {
         assert!(
             ui.contains(contract),
@@ -136,7 +140,7 @@ fn klondike_new_deal_options_declare_keyboard_accessibility_contracts() {
             "The Vegas and redeal-limit UI workflows and exact installed final foundation move/process identity remain open"
         )
     );
-    assert!(release.contains("both scoring modes remain untimed"));
+    assert!(release.contains("or Timed play"));
     let recovery_row = ui
         .find("Discard all unsaved progress and close Solitaire")
         .expect("recovery controls must exist");
@@ -636,7 +640,7 @@ fn pyramid_restart_publication_gate_is_pinned_without_overclaim() {
         "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
         "enabled:false",
         "active:false",
-        "Nothing was enabled, summoned, focused, cycled, or restarted",
+        "summoned, focused, cycled, or restarted",
         "Pyramid final-action and process/window identity remain",
     ] {
         assert!(
@@ -646,6 +650,38 @@ fn pyramid_restart_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_478A10A.md"));
     assert!(catalog.contains("0.1.0.r0.g478a10a-1"));
+}
+
+#[test]
+fn restart_current_deal_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_C0F61E8.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "c0f61e85126072f74a10ffea1fcd831c8b3e3d34",
+        "478a10a9aed6751c1cd9b90b0122d85faad021dd",
+        "a72922d69d82c235cb8fe6712187b66dc49c0e49",
+        "returned PASS with zero",
+        "The first candidate was not published",
+        "actions/runs/33150141503",
+        "job/98779976691",
+        "job/98779976934",
+        "214 tests",
+        "solitaire-omarchy 0.1.0.r0.gc0f61e8-1",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No Solitaire process existed before or after",
+        "summoned, focused, cycled, or restarted",
+        "authoritative `Stuff` mount was unavailable",
+        "deferred numbered-deal",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing c0f61e8 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_C0F61E8.md"));
+    assert!(catalog.contains("0.1.0.r0.gc0f61e8-1"));
 }
 
 #[test]
@@ -1508,6 +1544,60 @@ fn restart_current_deal_declares_keyboard_accessibility_and_recovery_contracts()
     }
     assert!(catalog.contains("docs/RESTART_CURRENT_DEAL_ACCEPTANCE.md"));
     assert!(catalog.contains("exact-package input remains open"));
+}
+
+#[test]
+fn klondike_timed_play_declares_keyboard_accessibility_and_checkpoint_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let domain = include_str!("../src/klondike.rs");
+    let evidence = include_str!("../docs/KLONDIKE_TIMED_PLAY_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "model: [\"Untimed\", \"Timed\"]",
+        "accessible-label: \"Timing mode for a new Klondike deal\"",
+        "current-index <=> root.klondike-timing-index",
+        "root.klondike-timed-active ? \"     Time  \" + root.elapsed-time",
+        "elapsed time \" + root.elapsed-time",
+        "root.klondike-timing-mode",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing timed UI contract: {contract}"
+        );
+    }
+    for contract in [
+        "const KLONDIKE_TIMER_CHECKPOINT_SECONDS: u64 = 15",
+        "fn klondike_timer_running(&self) -> bool",
+        "fn advance_klondike_timer(&mut self, seconds: u64) -> bool",
+        "fn checkpoint_klondike_elapsed(&mut self) -> bool",
+        "let last_tick = Cell::new(Instant::now())",
+        "now.saturating_duration_since(previous).as_secs()",
+        "let _ = controller.checkpoint_klondike_elapsed()",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing timed controller contract: {contract}"
+        );
+    }
+    assert!(domain.contains("if self.state.options.timed"));
+    for contract in [
+        "keyboard-focusable",
+        "Legacy three-field new-deal requests remain untimed",
+        "Undo and redo change cards and moves but never rewind",
+        "before leaving Klondike or closing",
+        "since the last checkpoint",
+        "never write deal counters or the local profile",
+        "exact packaged selector and clock have not been exercised",
+        "Partial.",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing timed evidence boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/KLONDIKE_TIMED_PLAY_ACCEPTANCE.md"));
+    assert!(catalog.contains("timed_klondike_checkpoint_failure_is_recoverable_and_fail_closed"));
 }
 
 #[test]

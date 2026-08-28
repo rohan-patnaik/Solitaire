@@ -1,4 +1,4 @@
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 use solitaire::cards::{Card, Rank, Suit};
 use solitaire::freecell::{self, Game as FreeCellGame};
 use solitaire::klondike::{Action, DrawMode, Game, Options, Pile, Scoring};
@@ -18,12 +18,14 @@ use solitaire::profile::{GameKind as ProfileGameKind, LocalProfile};
 use solitaire::pyramid::{self, Game as PyramidGame};
 use solitaire::spider::{self, Game as SpiderGame, SuitMode};
 use solitaire::tripeaks::{self, Game as TriPeaksGame};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 slint::include_modules!();
+
+const KLONDIKE_TIMER_CHECKPOINT_SECONDS: u64 = 15;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
@@ -141,6 +143,8 @@ struct Controller {
     local_profile_path: Option<PathBuf>,
     local_profile_revision: Option<SaveRevision>,
     local_profile_dirty: bool,
+    klondike_elapsed_dirty: bool,
+    klondike_uncheckpointed_seconds: u64,
     status: String,
 }
 
@@ -238,6 +242,8 @@ impl Controller {
             local_profile_path,
             local_profile_revision,
             local_profile_dirty: false,
+            klondike_elapsed_dirty: false,
+            klondike_uncheckpointed_seconds: 0,
             status,
         }
     }
@@ -345,6 +351,9 @@ impl Controller {
     }
 
     fn select_game(&mut self, game: &str) {
+        if self.active == GameKind::Klondike && !self.checkpoint_klondike_elapsed() {
+            return;
+        }
         self.active = match game {
             "Spider" => GameKind::Spider,
             "FreeCell" => GameKind::FreeCell,
@@ -546,7 +555,11 @@ impl Controller {
 
     fn replace_game(&mut self, candidate: ProspectiveGame) {
         match candidate {
-            ProspectiveGame::Klondike(game) => self.game = game,
+            ProspectiveGame::Klondike(game) => {
+                self.game = game;
+                self.klondike_elapsed_dirty = false;
+                self.klondike_uncheckpointed_seconds = 0;
+            }
             ProspectiveGame::Spider(game) => self.spider = game,
             ProspectiveGame::FreeCell(game) => self.freecell = game,
             ProspectiveGame::TriPeaks(game) => self.tripeaks = game,
@@ -637,6 +650,10 @@ impl Controller {
         match result {
             Some(Ok(())) => {
                 self.dirty[index] = false;
+                if self.active == GameKind::Klondike {
+                    self.klondike_elapsed_dirty = false;
+                    self.klondike_uncheckpointed_seconds = 0;
+                }
                 true
             }
             Some(Err(error)) if error.committed_but_not_durable() => {
@@ -656,6 +673,70 @@ impl Controller {
             None => {
                 self.dirty[index] = true;
                 self.status = "Unsaved changes remain in memory; no writable save location. Retry before closing.".into();
+                false
+            }
+        }
+    }
+
+    fn klondike_timer_running(&self) -> bool {
+        self.active == GameKind::Klondike
+            && self.pending_new_deal.is_none()
+            && self.game.state.options.timed
+            && !self.game.state.is_won()
+    }
+
+    fn advance_klondike_timer(&mut self, seconds: u64) -> bool {
+        if seconds == 0 || !self.klondike_timer_running() {
+            return false;
+        }
+        let before = self.game.state.elapsed_seconds;
+        self.game.state.advance_time(seconds);
+        let advanced = self.game.state.elapsed_seconds.saturating_sub(before);
+        if advanced == 0 {
+            return false;
+        }
+        self.klondike_elapsed_dirty = true;
+        self.klondike_uncheckpointed_seconds = self
+            .klondike_uncheckpointed_seconds
+            .saturating_add(advanced);
+        if self.klondike_uncheckpointed_seconds >= KLONDIKE_TIMER_CHECKPOINT_SECONDS {
+            let _ = self.checkpoint_klondike_elapsed();
+        }
+        true
+    }
+
+    fn checkpoint_klondike_elapsed(&mut self) -> bool {
+        if !self.klondike_elapsed_dirty {
+            return true;
+        }
+        self.klondike_uncheckpointed_seconds = 0;
+        let result = self
+            .save_path
+            .as_deref()
+            .map(|path| save_klondike_checked(path, &self.game, &mut self.save_revisions[0]));
+        match result {
+            Some(Ok(())) => {
+                self.dirty[0] = false;
+                self.klondike_elapsed_dirty = false;
+                true
+            }
+            Some(Err(error)) if error.committed_but_not_durable() => {
+                self.dirty[0] = true;
+                self.status = format!(
+                    "The timed Klondike checkpoint reached disk, but durability is indeterminate: {error}"
+                );
+                false
+            }
+            Some(Err(error)) => {
+                self.dirty[0] = true;
+                self.status = format!(
+                    "Timed Klondike progress remains in memory; checkpoint failed: {error}. Retry before closing."
+                );
+                false
+            }
+            None => {
+                self.dirty[0] = true;
+                self.status = "Timed Klondike progress remains in memory; no writable save location. Retry before closing.".into();
                 false
             }
         }
@@ -1180,6 +1261,8 @@ impl Controller {
         self.pending_new_deal_conflict = false;
         self.dirty = [false; 5];
         self.local_profile_dirty = false;
+        self.klondike_elapsed_dirty = false;
+        self.klondike_uncheckpointed_seconds = 0;
         self.status = "Unsaved progress and local statistics discarded; closing".into();
     }
 
@@ -1315,6 +1398,11 @@ fn parse_klondike_variant(variant: &str) -> Option<NewDealVariant> {
         Some("3 redeals") => Some(3),
         _ => return None,
     };
+    let timed = match fields.next() {
+        None | Some("Untimed") => false,
+        Some("Timed") => true,
+        _ => return None,
+    };
     if fields.next().is_some() {
         return None;
     }
@@ -1322,7 +1410,7 @@ fn parse_klondike_variant(variant: &str) -> Option<NewDealVariant> {
         draw_mode,
         scoring,
         max_redeals,
-        timed: false,
+        timed,
     })
 }
 
@@ -1533,6 +1621,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let controller = Rc::clone(&controller);
         app.window().on_close_requested(move || {
             let mut controller = controller.borrow_mut();
+            let _ = controller.checkpoint_klondike_elapsed();
             if controller.dirty.iter().any(|dirty| *dirty) || controller.local_profile_dirty {
                 controller.status =
                     "Unsaved changes remain. Retry save before closing the application.".into();
@@ -1549,6 +1638,31 @@ fn main() -> Result<(), slint::PlatformError> {
     register_klondike_handlers(&app, &controller);
     register_spider_freecell_handlers(&app, &controller);
     register_toolbar_handlers(&app, &controller);
+    let timer = Timer::default();
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(&controller);
+        let last_tick = Cell::new(Instant::now());
+        timer.start(TimerMode::Repeated, Duration::from_secs(1), move || {
+            let now = Instant::now();
+            let mut state = controller.borrow_mut();
+            if !state.klondike_timer_running() {
+                last_tick.set(now);
+                return;
+            }
+            let previous = last_tick.get();
+            let seconds = now.saturating_duration_since(previous).as_secs();
+            if seconds == 0 {
+                return;
+            }
+            last_tick.set(previous + Duration::from_secs(seconds));
+            if state.advance_klondike_timer(seconds)
+                && let Some(app) = weak.upgrade()
+            {
+                render(&app, &state);
+            }
+        });
+    }
     app.run()
 }
 
@@ -1911,7 +2025,16 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_redeals_remaining(state.options.max_redeals.map_or(-1, |maximum| {
         i32::from(maximum.saturating_sub(state.redeals))
     }));
+    app.set_klondike_timed_active(state.options.timed);
+    app.set_elapsed_time(format_elapsed_time(state.elapsed_seconds).into());
     render_klondike_options(app, controller);
+}
+
+fn format_elapsed_time(elapsed_seconds: u64) -> String {
+    let hours = elapsed_seconds / 3_600;
+    let minutes = elapsed_seconds % 3_600 / 60;
+    let seconds = elapsed_seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
 fn render_klondike_options(app: &AppWindow, controller: &Controller) {
@@ -1922,6 +2045,8 @@ fn render_klondike_options(app: &AppWindow, controller: &Controller) {
         app.set_klondike_scoring_mode(options.scoring_mode.into());
         app.set_klondike_redeal_index(options.redeal_index);
         app.set_klondike_redeal_limit(options.redeal_limit.into());
+        app.set_klondike_timing_index(options.timing_index);
+        app.set_klondike_timing_mode(options.timing_mode.into());
     }
 }
 
@@ -1940,6 +2065,8 @@ struct KlondikeUiOptions {
     scoring_mode: &'static str,
     redeal_index: i32,
     redeal_limit: &'static str,
+    timing_index: i32,
+    timing_mode: &'static str,
 }
 
 fn klondike_ui_options(options: Options) -> KlondikeUiOptions {
@@ -1957,6 +2084,11 @@ fn klondike_ui_options(options: Options) -> KlondikeUiOptions {
         Some(3) => (2, "3 redeals"),
         Some(_) => (-1, "Custom"),
     };
+    let (timing_index, timing_mode) = if options.timed {
+        (1, "Timed")
+    } else {
+        (0, "Untimed")
+    };
     KlondikeUiOptions {
         draw_index,
         draw_mode,
@@ -1964,6 +2096,8 @@ fn klondike_ui_options(options: Options) -> KlondikeUiOptions {
         scoring_mode,
         redeal_index,
         redeal_limit,
+        timing_index,
+        timing_mode,
     }
 }
 
@@ -2741,6 +2875,8 @@ mod tests {
             local_profile_path: None,
             local_profile_revision: None,
             local_profile_dirty: false,
+            klondike_elapsed_dirty: false,
+            klondike_uncheckpointed_seconds: 0,
             status: "Ready".into(),
         }
     }
@@ -4925,13 +5061,219 @@ mod tests {
         remove_save(&path);
     }
 
+    fn timed_klondike_controller(seed: u64, path: &Path) -> Controller {
+        let mut controller = controller(seed);
+        controller.game = Game::new(
+            seed,
+            Options {
+                timed: true,
+                ..Options::default()
+            },
+        );
+        controller.save_path = Some(path.to_path_buf());
+        assert!(controller.save());
+        controller
+    }
+
+    #[test]
+    fn timed_klondike_checkpoints_are_bounded_atomic_and_profile_independent() {
+        let game_path = test_save("timed-checkpoint-game");
+        let counter_path = test_save("timed-checkpoint-counters");
+        let profile_path = test_save("timed-checkpoint-profile");
+        for path in [&game_path, &counter_path, &profile_path] {
+            remove_save(path);
+        }
+        let mut controller = timed_klondike_controller(901, &game_path);
+        controller.deal_counters_path = Some(counter_path.clone());
+        controller.local_profile_path = Some(profile_path.clone());
+        ensure_deal_counters(&counter_path, controller.next_seeds).unwrap();
+        assert!(controller.save_local_profile());
+        let initial_game_bytes = fs::read(&game_path).unwrap();
+        let counter_bytes = fs::read(&counter_path).unwrap();
+        let profile_bytes = fs::read(&profile_path).unwrap();
+
+        controller.advance_klondike_timer(14);
+        assert_eq!(controller.game.state.elapsed_seconds, 14);
+        assert!(controller.klondike_elapsed_dirty);
+        assert!(!controller.dirty[0]);
+        assert_eq!(fs::read(&game_path).unwrap(), initial_game_bytes);
+
+        controller.advance_klondike_timer(1);
+        assert_eq!(controller.game.state.elapsed_seconds, 15);
+        assert!(!controller.klondike_elapsed_dirty);
+        assert_eq!(
+            load_klondike_revisioned(&game_path)
+                .unwrap()
+                .0
+                .state
+                .elapsed_seconds,
+            15
+        );
+        assert_eq!(fs::read(&counter_path).unwrap(), counter_bytes);
+        assert_eq!(fs::read(&profile_path).unwrap(), profile_bytes);
+        controller.game.state.elapsed_seconds = u64::MAX;
+        controller.advance_klondike_timer(1);
+        assert_eq!(controller.game.state.elapsed_seconds, u64::MAX);
+        assert!(!controller.klondike_elapsed_dirty);
+        for path in [&game_path, &counter_path, &profile_path] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            remove_save(path);
+        }
+    }
+
+    #[test]
+    fn timed_klondike_pauses_and_checkpoints_before_switching_games() {
+        let path = test_save("timed-switch-checkpoint");
+        remove_save(&path);
+        let mut controller = timed_klondike_controller(902, &path);
+        controller.pending_new_deal = Some(PendingNewDeal {
+            game: GameKind::Klondike,
+            variant: NewDealVariant::Klondike {
+                draw_mode: DrawMode::One,
+                scoring: Scoring::Standard,
+                max_redeals: None,
+                timed: true,
+            },
+            restart_seed: Some(902),
+        });
+        controller.advance_klondike_timer(5);
+        assert_eq!(controller.game.state.elapsed_seconds, 0);
+        controller.pending_new_deal = None;
+
+        controller.advance_klondike_timer(3);
+        controller.select_game("Spider");
+        assert!(controller.active == GameKind::Spider);
+        assert_eq!(
+            load_klondike_revisioned(&path)
+                .unwrap()
+                .0
+                .state
+                .elapsed_seconds,
+            3
+        );
+        controller.advance_klondike_timer(5);
+        assert_eq!(controller.game.state.elapsed_seconds, 3);
+
+        controller.active = GameKind::Klondike;
+        controller.game.state.stock.clear();
+        controller.game.state.waste.clear();
+        for column in &mut controller.game.state.tableau {
+            column.clear();
+        }
+        controller.game.state.foundations = Suit::ALL.map(|suit| {
+            Rank::ALL
+                .into_iter()
+                .map(|rank| Card::new(suit, rank))
+                .collect()
+        });
+        assert!(controller.game.state.is_won());
+        controller.advance_klondike_timer(5);
+        assert_eq!(controller.game.state.elapsed_seconds, 3);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn timed_klondike_checkpoint_failure_is_recoverable_and_fail_closed() {
+        let path = test_save("timed-checkpoint-retry");
+        remove_save(&path);
+        let mut controller = controller(903);
+        controller.game = Game::new(
+            903,
+            Options {
+                timed: true,
+                ..Options::default()
+            },
+        );
+
+        controller.advance_klondike_timer(KLONDIKE_TIMER_CHECKPOINT_SECONDS);
+        assert_eq!(controller.game.state.elapsed_seconds, 15);
+        assert!(controller.klondike_elapsed_dirty);
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("no writable save location"));
+        controller.select_game("Spider");
+        assert!(controller.active == GameKind::Klondike);
+        assert_eq!(controller.game.state.elapsed_seconds, 15);
+
+        controller.save_path = Some(path.clone());
+        controller.retry_save();
+        assert!(!controller.dirty[0]);
+        assert!(!controller.klondike_elapsed_dirty);
+        assert_eq!(load_klondike_revisioned(&path).unwrap().0, controller.game);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn timed_klondike_stale_checkpoint_preserves_both_owners_until_reload() {
+        let path = test_save("timed-checkpoint-conflict");
+        remove_save(&path);
+        let mut controller = timed_klondike_controller(904, &path);
+        let (mut external, revision) = load_klondike_revisioned(&path).unwrap();
+        external.state.advance_time(7);
+        let mut external_revision = Some(revision);
+        save_klondike_checked(&path, &external, &mut external_revision).unwrap();
+
+        controller.advance_klondike_timer(KLONDIKE_TIMER_CHECKPOINT_SECONDS);
+        assert_eq!(controller.game.state.elapsed_seconds, 15);
+        assert_eq!(load_klondike_revisioned(&path).unwrap().0, external);
+        assert!(controller.dirty[0]);
+        assert!(controller.status.contains("checkpoint failed"));
+
+        controller.reload_disk_copy();
+        assert_eq!(controller.game, external);
+        assert!(!controller.dirty[0]);
+        assert!(!controller.klondike_elapsed_dirty);
+        remove_save(&path);
+    }
+
+    #[test]
+    fn elapsed_time_format_is_bounded_and_exact() {
+        assert_eq!(format_elapsed_time(0), "00:00:00");
+        assert_eq!(format_elapsed_time(3_661), "01:01:01");
+        assert_eq!(format_elapsed_time(u64::MAX), "5124095576030431:00:15");
+    }
+
     #[test]
     fn klondike_new_deal_choices_are_saved_and_reopen_with_exact_options() {
-        for (choice, draw_mode, scoring, starting_score) in [
-            ("Draw 1 · Standard", DrawMode::One, Scoring::Standard, 0),
-            ("Draw 1 · Vegas", DrawMode::One, Scoring::Vegas, -52),
-            ("Draw 3 · Standard", DrawMode::Three, Scoring::Standard, 0),
-            ("Draw 3 · Vegas", DrawMode::Three, Scoring::Vegas, -52),
+        for (choice, draw_mode, scoring, timed, starting_score) in [
+            (
+                "Draw 1 · Standard",
+                DrawMode::One,
+                Scoring::Standard,
+                false,
+                0,
+            ),
+            ("Draw 1 · Vegas", DrawMode::One, Scoring::Vegas, false, -52),
+            (
+                "Draw 3 · Standard",
+                DrawMode::Three,
+                Scoring::Standard,
+                false,
+                0,
+            ),
+            (
+                "Draw 3 · Vegas",
+                DrawMode::Three,
+                Scoring::Vegas,
+                false,
+                -52,
+            ),
+            (
+                "Draw 1 · Standard · Unlimited · Timed",
+                DrawMode::One,
+                Scoring::Standard,
+                true,
+                0,
+            ),
+            (
+                "Draw 3 · Vegas · Unlimited · Timed",
+                DrawMode::Three,
+                Scoring::Vegas,
+                true,
+                -52,
+            ),
         ] {
             let path = test_save(&format!("klondike-new-deal-{choice}"));
             remove_save(&path);
@@ -4943,7 +5285,7 @@ mod tests {
             assert_eq!(controller.game.state.options.draw_mode, draw_mode);
             assert_eq!(controller.game.state.options.scoring, scoring);
             assert_eq!(controller.game.state.options.max_redeals, None);
-            assert!(!controller.game.state.options.timed);
+            assert_eq!(controller.game.state.options.timed, timed);
             assert_eq!(controller.game.state.score, starting_score);
             let (reopened, _) = load_klondike_revisioned(&path).unwrap();
             assert_eq!(reopened, controller.game);
@@ -5016,6 +5358,8 @@ mod tests {
                 scoring_mode: "Standard",
                 redeal_index: 0,
                 redeal_limit: "Unlimited",
+                timing_index: 0,
+                timing_mode: "Untimed",
             }
         );
         assert_eq!(
@@ -5032,6 +5376,8 @@ mod tests {
                 scoring_mode: "Vegas",
                 redeal_index: 1,
                 redeal_limit: "1 redeal",
+                timing_index: 0,
+                timing_mode: "Untimed",
             }
         );
         assert_eq!(
@@ -5048,6 +5394,8 @@ mod tests {
                 scoring_mode: "Vegas",
                 redeal_index: 2,
                 redeal_limit: "3 redeals",
+                timing_index: 0,
+                timing_mode: "Untimed",
             }
         );
         assert_eq!(
@@ -5055,7 +5403,7 @@ mod tests {
                 draw_mode: DrawMode::One,
                 scoring: Scoring::Standard,
                 max_redeals: Some(2),
-                timed: false,
+                timed: true,
             }),
             KlondikeUiOptions {
                 draw_index: 0,
@@ -5064,6 +5412,8 @@ mod tests {
                 scoring_mode: "Standard",
                 redeal_index: -1,
                 redeal_limit: "Custom",
+                timing_index: 1,
+                timing_mode: "Timed",
             }
         );
 
@@ -5305,6 +5655,8 @@ mod tests {
             "Draw 3 · Unknown",
             "Draw 3 · Vegas · 2 redeals",
             "Draw 3 · Vegas · 1 redeal · trailing",
+            "Draw 3 · Vegas · 1 redeal · timed",
+            "Draw 3 · Vegas · 1 redeal · Timed · trailing",
         ] {
             controller.new_game(invalid);
             assert_eq!(controller.game, original_game, "{invalid:?}");
@@ -5318,13 +5670,17 @@ mod tests {
             );
         }
 
-        let oversized = format!("Draw 3 · Vegas · {}", "3".repeat(4_096));
-        controller.new_game(&oversized);
-        assert_eq!(controller.game, original_game);
-        assert_eq!(controller.next_seeds, original_counters);
-        assert_eq!(fs::read(&game_path).unwrap(), original_save);
-        assert!(!counter_path.exists());
-        assert!(controller.pending_new_deal.is_none());
+        for oversized in [
+            format!("Draw 3 · Vegas · {}", "3".repeat(4_096)),
+            format!("Draw 3 · Vegas · Unlimited · {}", "T".repeat(4_096)),
+        ] {
+            controller.new_game(&oversized);
+            assert_eq!(controller.game, original_game);
+            assert_eq!(controller.next_seeds, original_counters);
+            assert_eq!(fs::read(&game_path).unwrap(), original_save);
+            assert!(!counter_path.exists());
+            assert!(controller.pending_new_deal.is_none());
+        }
 
         controller.dirty[0] = true;
         controller.new_game("Draw 3 · Vegas");

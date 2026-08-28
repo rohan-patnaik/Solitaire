@@ -160,13 +160,18 @@ final-action and process/window acceptance remain open. See
 [`FREECELL_COMPLETE_DEAL_ACCEPTANCE.md`](FREECELL_COMPLETE_DEAL_ACCEPTANCE.md).
 
 The native Klondike new-deal surface now offers draw-one or draw-three with
-Standard or Vegas scoring and unlimited, one, or three stock redeals. Vegas
-starts at -52 and awards five points for each foundation card. Focused
-controller tests cover the exact choices, atomic save/reopen, bounded exhaustion,
-rejected-extra-redeal atomicity, and undo/redo. The current redeal count and
-bounded remainder are exposed to the native surface. This UI workflow has not
-yet passed the exact-package Wayland gate, and both scoring modes remain untimed.
-See [`KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md`](KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md).
+Standard or Vegas scoring, unlimited, one, or three stock redeals, and Untimed
+or Timed play. Vegas starts at -52 and awards five points for each foundation
+card. The informational timed clock pauses outside active Klondike, during a
+pending deal change, and after a win; it checkpoints through the existing
+atomic stale-writer-aware save every 15 seconds and before switching or closing.
+Focused coverage proves exact choices and reopen, no pre-boundary write,
+counter/profile independence, monotonic undo/redo, and missing-save/conflict
+recovery. Time does not alter scoring, and a crash can lose seconds since the
+last checkpoint. The selector and clock have not passed the exact-package
+Wayland gate. See
+[`KLONDIKE_TIMED_PLAY_ACCEPTANCE.md`](KLONDIKE_TIMED_PLAY_ACCEPTANCE.md) and
+[`KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md`](KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md).
 
 Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
 replay with only the exposed King of Diamonds remaining in tableau column 1.
@@ -242,6 +247,10 @@ package files.
 - The shared restart-current-deal control is automated source evidence only;
   exact-package keyboard activation, AT-SPI semantics, status, and save/reopen
   remain pending under the no-focus boundary.
+- Klondike timed play is automated source evidence only. Exact-package timing
+  selection, visible progression, AT-SPI state/value updates, pause behavior,
+  and checkpoint/reopen remain pending. Time bonuses and penalties are not
+  implemented.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
 - Long malformed-save and conflict messages use a dedicated full-width,
