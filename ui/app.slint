@@ -155,6 +155,9 @@ export component AppWindow inherits Window {
     in-out property <string> tripeaks-rule-mode: "Standard";
     in-out property <int> tripeaks-rule-index: 0;
     in property <bool> tripeaks-wraparound-active: false;
+    in-out property <string> pyramid-redeal-limit: "2 redeals";
+    in-out property <int> pyramid-redeal-index: 2;
+    in property <int> pyramid-max-redeals-active: 2;
     in-out property <string> freecell-deal-number-entry: "";
 
     callback select-game(string);
@@ -234,7 +237,7 @@ export component AppWindow inherits Window {
                             ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number
                                 + "     Rule  " + (root.tripeaks-wraparound-active ? "Ace-King wrap" : "Standard")
                             : (root.game-kind == "Pyramid"
-                                ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number + "     Redeals  " + root.redeals
+                                ? "Score  " + root.score + "     Moves  " + root.moves + "     Deal  " + root.deal-number + "     Redeals  " + root.redeals + "/" + root.pyramid-max-redeals-active
                                 : "Score  " + root.score + "     Moves  " + root.moves + "     Redeals  " + root.redeals
                                     + (root.redeals-remaining < 0 ? " / unlimited" : "     Remaining  " + root.redeals-remaining))));
                 color: #dce9e3;
@@ -270,10 +273,21 @@ export component AppWindow inherits Window {
                     clicked => { root.new-game(root.tripeaks-rule-mode); }
                 }
             }
-            if root.game-kind == "Pyramid": Button {
-                text: "New deal";
-                accessible-label: "Start the next standard Pyramid deal";
-                clicked => { root.new-game("Standard"); }
+            if root.game-kind == "Pyramid": HorizontalBox {
+                spacing: 8px;
+                pyramid-redeals := ComboBox {
+                    model: ["No redeals", "1 redeal", "2 redeals"];
+                    current-value <=> root.pyramid-redeal-limit;
+                    current-index <=> root.pyramid-redeal-index;
+                    enabled: !root.has-pending-new-deal;
+                    accessible-label: "Stock redeal limit for a new Pyramid deal";
+                }
+                Button {
+                    text: "New deal";
+                    enabled: !root.has-pending-new-deal;
+                    accessible-label: "Start the next Pyramid deal with the selected redeal limit";
+                    clicked => { root.new-game(root.pyramid-redeal-limit); }
+                }
             }
         }
 
@@ -427,7 +441,7 @@ export component AppWindow inherits Window {
                                 ? "TriPeaks Ace-King wrap treats Ace and King as adjacent. All play stays on this device."
                                 : "Standard TriPeaks uses no rank wraparound. All play stays on this device.")
                             : (root.game-kind == "Pyramid"
-                                ? "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device."
+                                ? "Pyramid uses pair-to-13 rules and " + root.pyramid-max-redeals-active + (root.pyramid-max-redeals-active == 1 ? " stock redeal. " : " stock redeals. ") + "All play stays on this device."
                                 : "Choose a face-up card or run, then choose its destination. All play stays on this device."))));
                 color: #aac5bd;
                 font-size: 11px;

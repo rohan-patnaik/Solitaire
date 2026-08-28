@@ -13,7 +13,7 @@ The canonical evidence/status inventory is `docs/offline-capabilities.json`; its
 
 ## Status
 
-This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, standard Pyramid, and Standard plus optional Ace-King-wrap TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell can open an explicit repository-defined decimal deal number or advance to the next one, while Pyramid and TriPeaks expose sequential deterministic deals. These numbers reproduce this repository's generator and are not a claim of compatibility with another product's deal numbering. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
+This is an alpha, not a Complete/Verified Microsoft Solitaire Collection replacement. M0 foundation and playable Slint surfaces for Klondike, Spider, FreeCell, Pyramid, and Standard plus optional Ace-King-wrap TriPeaks are implemented. Spider exposes one-, two-, and four-suit deals; FreeCell can open an explicit repository-defined decimal deal number or advance to the next one; Pyramid exposes zero-, one-, and two-redeal choices; and Pyramid and TriPeaks use sequential deterministic deals. These numbers reproduce this repository's generator and are not a claim of compatibility with another product's deal numbering. The surfaces route all pile interactions through renderer-independent engines and include undo, redo, hints, replay-backed save/resume, keyboard activation, accessible labels, live status text, and bounded device-local played/won counters.
 
 See the [alpha install, demonstrated workflows, privacy boundary, and known limits](docs/ALPHA_RELEASE.md). Broader hostile/property coverage, the collection layer, and remaining release acceptance are tracked in [ROADMAP.md](ROADMAP.md).
 
@@ -60,7 +60,12 @@ The active game's local statistics count a deal as played on its first successfu
   accounting. Exact-package final-action acceptance remains open.
 - Undo, redo, and deterministic hints operate on the active game. Each game uses a separate versioned local save reconstructed from its replay actions.
 - Cards and empty destinations declare pointer, assistive-technology default-action, and Tab plus Space/Enter activation semantics. Installed AT-SPI acceptance covers the five game surfaces and all three Spider suit modes; full keyboard-only traversal and spoken screen-reader output remain pending.
-- In standard Pyramid, activate an exposed king to remove it, or activate two exposed tableau/waste cards whose ranks total 13. The original seven-row layout exposes the exact deal number, stock, waste, score, move count, redeals, hints, and win status. Covered-card identities stay hidden visually and from accessible names.
+- In Pyramid, choose zero, one, or two stock redeals for the next sequential
+  deal. Activate an exposed king to remove it, or activate two exposed
+  tableau/waste cards whose ranks total 13. The original seven-row layout
+  exposes the exact deal number, stock, waste, score, move count, redeals used
+  against the active maximum, hints, and win status. Covered-card identities
+  stay hidden visually and from accessible names.
 - A checked-in normal seed-zero Pyramid replay reconstructs to one legal pair
   before victory and exercises final selection/pair routing, status, atomic
   save/reopen, undo/redo, and one-time local played/won accounting.

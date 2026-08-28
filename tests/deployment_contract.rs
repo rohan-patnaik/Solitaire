@@ -63,13 +63,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("d20ba4111deb2e948e593fbeec4ca2c45b597bef"));
     assert!(metadata.contains("4b31024426b73fafe93597e4cd42312eef2b26b0"));
     assert!(metadata.contains("5f40bdcabe87db420f15ab34d71aa26ff5f9e3bb"));
-    assert!(metadata.contains("a72f3ce093fbabfd02a64bdc6680b0fff30652c1"));
-    assert!(metadata.contains("actions/runs/33128758547"));
+    assert!(metadata.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
+    assert!(metadata.contains("actions/runs/33130626248"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("a72f3ce093fbabfd02a64bdc6680b0fff30652c1"));
-    assert!(generated.contains("actions/runs/33128758547"));
+    assert!(generated.contains("b50faa54c520f49ea27a478786b640b91c8ca9f1"));
+    assert!(generated.contains("actions/runs/33130626248"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -411,6 +411,68 @@ fn tripeaks_wraparound_candidate_is_pinned_without_overclaim() {
     assert!(ui.contains("current-index <=> root.tripeaks-rule-index"));
     assert!(ui.contains("accessible-label: \"Rank rule for a new TriPeaks deal\""));
     assert!(ui.contains("root.tripeaks-wraparound-active"));
+}
+
+#[test]
+fn tripeaks_wraparound_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_B50FAA5.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "b50faa54c520f49ea27a478786b640b91c8ca9f1",
+        "a72f3ce093fbabfd02a64bdc6680b0fff30652c1",
+        "9209f7b73fac79529ec680aa1d3abe74fd03dd0a",
+        "actions/runs/33130626248",
+        "job/98719044292",
+        "job/98719044070",
+        "solitaire-omarchy 0.1.0.r0.gb50faa5-1",
+        "signed off with no actionable findings",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No plugin layer or native window was",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing b50faa5 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_B50FAA5.md"));
+    assert!(catalog.contains("0.1.0.r0.gb50faa5-1"));
+}
+
+#[test]
+fn pyramid_redeal_limit_candidate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PYRAMID_REDEAL_LIMIT_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let controller = include_str!("../src/main.rs");
+    let ui = include_str!("../ui/app.slint");
+    for contract in [
+        "No redeals`, `1 redeal`, and `2 redeals",
+        "existing serialized `Options::max_redeals`",
+        "Published builds through `b50faa5`",
+        "preserves its source bytes",
+        "pyramid_redeal_limits_are_strict_atomic_reopenable_and_enforced",
+        "bounded_pyramid_redeal_setups_are_accepted_and_preserved",
+        "reopened_pyramid_options_map_values_and_indices_without_a_display",
+        "No Pyramid redeals remain",
+        "4 KiB hostile fields",
+        "mode `0600`",
+        "no-focus policy",
+        "rows remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing Pyramid redeal boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("pyramid_redeal_limits_are_strict_atomic_reopenable_and_enforced"));
+    assert!(catalog.contains("Published builds through b50faa5 reject and quarantine"));
+    assert!(controller.contains("(GameKind::Pyramid, \"No redeals\")"));
+    assert!(controller.contains("fn pyramid_ui_options_for_render"));
+    assert!(ui.contains("model: [\"No redeals\", \"1 redeal\", \"2 redeals\"]"));
+    assert!(ui.contains("current-index <=> root.pyramid-redeal-index"));
+    assert!(ui.contains("accessible-label: \"Stock redeal limit for a new Pyramid deal\""));
+    assert!(ui.contains("root.pyramid-max-redeals-active"));
 }
 
 #[test]
@@ -1059,8 +1121,11 @@ fn pyramid_surface_declares_keyboard_and_accessibility_contracts() {
         "callback pyramid-draw-stock",
         "callback pyramid-waste-activated",
         "callback pyramid-tableau-activated",
-        "Start the next standard Pyramid deal",
-        "Standard Pyramid uses pair-to-13 rules and two redeals",
+        "Start the next Pyramid deal with the selected redeal limit",
+        "Stock redeal limit for a new Pyramid deal",
+        "model: [\"No redeals\", \"1 redeal\", \"2 redeals\"]",
+        "current-index <=> root.pyramid-redeal-index",
+        "Pyramid uses pair-to-13 rules and ",
         "accessible-action-default => { root.activated(); }",
         "accessible-live-region: polite",
     ] {
@@ -1140,7 +1205,8 @@ fn long_recovery_status_has_a_dedicated_scrollable_surface() {
         "max-height: 80px",
         "Status details — arrow keys scroll",
         "Standard TriPeaks uses no rank wraparound. All play stays on this device.",
-        "Standard Pyramid uses pair-to-13 rules and two redeals. All play stays on this device.",
+        "Pyramid uses pair-to-13 rules and ",
+        "root.pyramid-max-redeals-active == 1 ? \" stock redeal. \" : \" stock redeals. \"",
         "status-scroll := ScrollView",
         "width: parent.width - 28px",
         "viewport-width: self.visible-width",

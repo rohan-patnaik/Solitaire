@@ -557,11 +557,6 @@ pub fn load_pyramid(path: &Path) -> Result<pyramid::Game, SaveError> {
 
 fn parse_pyramid(bytes: &[u8]) -> Result<pyramid::Game, SaveError> {
     let replay = parse_replay::<Replay<pyramid::Action, pyramid::Options>>(bytes, "pyramid")?;
-    if replay.setup != pyramid::Options::default() {
-        return Err(SaveError::InvalidReplay(
-            "standard Pyramid saves require exactly two redeals".into(),
-        ));
-    }
     pyramid::Game::from_replay(&replay).map_err(|error| SaveError::InvalidReplay(error.to_string()))
 }
 
@@ -1610,8 +1605,8 @@ mod tests {
     }
 
     #[test]
-    fn nonstandard_pyramid_setups_are_rejected_and_quarantined() {
-        for max_redeals in [0, u8::MAX] {
+    fn bounded_pyramid_redeal_setups_are_accepted_and_preserved() {
+        for max_redeals in [0, 1, 2, u8::MAX] {
             let path = test_path(&format!("pyramid-redeals-{max_redeals}.json"));
             let replay: Replay<pyramid::Action, pyramid::Options> = Replay {
                 version: crate::replay::CURRENT_REPLAY_VERSION,
@@ -1621,25 +1616,14 @@ mod tests {
                 actions: Vec::new(),
             };
             save_replay(&path, "pyramid", &replay).unwrap();
-            let source = fs::read(&path).unwrap();
+            let loaded = load_pyramid(&path).unwrap();
+            assert_eq!(loaded.state.options.max_redeals, max_redeals);
+            assert_eq!(loaded.replay(), replay);
             assert!(matches!(
-                load_pyramid(&path),
-                Err(SaveError::InvalidReplay(reason))
-                    if reason == "standard Pyramid saves require exactly two redeals"
+                recover_pyramid_revisioned(&path).unwrap(),
+                RecoveredSave::Loaded(game, _) if game == loaded
             ));
-
-            let RecoveredSave::Quarantined {
-                path: quarantined,
-                reason,
-                ..
-            } = recover_pyramid_revisioned(&path).unwrap()
-            else {
-                panic!("nonstandard Pyramid save should be quarantined");
-            };
-            assert!(reason.contains("exactly two redeals"));
-            assert!(!path.exists());
-            assert_eq!(fs::read(&quarantined).unwrap(), source);
-            fs::remove_file(quarantined).unwrap();
+            fs::remove_file(&path).unwrap();
             fs::remove_file(path.with_extension("json.lock")).unwrap();
         }
     }

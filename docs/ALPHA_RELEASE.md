@@ -1,7 +1,7 @@
 # Solitaire five-game alpha
 
 Solitaire is an offline-first native Linux alpha for Omarchy Quattro. The
-current scope is playable Klondike, Spider, FreeCell, standard Pyramid, and
+current scope is playable Klondike, Spider, FreeCell, bounded-redeal Pyramid, and
 Standard plus optional Ace-King-wrap TriPeaks. It is not a Complete/Verified
 Microsoft Solitaire Collection replacement. Exactly one applicable capability row is Complete:
 the detached Omarchy launcher. All other applicable rows remain Partial.
@@ -63,6 +63,16 @@ through the real notification service and an isolated Quickshell. See
 [`OMARCHY_LAUNCHER_ACCEPTANCE_4B31024.md`](OMARCHY_LAUNCHER_ACCEPTANCE_4B31024.md).
 
 ## Demonstrated alpha workflows
+
+Pyramid now offers zero, one, or two stock redeals through a
+keyboard/accessibility-declared new-deal control. Focused headless coverage
+proves strict selection, bounded exhaustion, undo/redo, dirty confirmation,
+mode-0600 save/counter persistence, reopen, and atomic rejection of malformed
+and 4 KiB hostile fields. Published builds through `b50faa5` reject and
+quarantine zero- or one-redeal saves while preserving source bytes and opening a
+fresh deal; two-redeal saves remain compatible. Exact-package selection,
+used/maximum display, and AT-SPI input remain open under the no-focus boundary.
+See [`PYRAMID_REDEAL_LIMIT_ACCEPTANCE.md`](PYRAMID_REDEAL_LIMIT_ACCEPTANCE.md).
 
 Pyramid deal zero now has a checked-in normal 62-action replay with one exposed
 top card and one waste card remaining whose ranks total 13. Production replay
@@ -186,7 +196,7 @@ package files.
   Klondike, FreeCell, TriPeaks, and Pyramid complete-deal transcripts plus the
   normal one-suit Spider transcript now prove all five final controller
   lifecycles, but the installed win transitions,
-  remaining rule variants, broader hostile/property tests, drag/touch behavior,
+  remaining rule variants and installed selectors, broader hostile/property tests, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and installed
   TriPeaks rule selection remain incomplete or unverified.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output

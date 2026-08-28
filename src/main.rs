@@ -53,7 +53,9 @@ enum NewDealVariant {
     TriPeaks {
         wraparound: bool,
     },
-    Standard,
+    Pyramid {
+        max_redeals: u8,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1199,7 +1201,9 @@ fn parse_new_deal_variant(game: GameKind, variant: &str) -> Option<NewDealVarian
         (GameKind::TriPeaks, "Ace-King wrap") => {
             Some(NewDealVariant::TriPeaks { wraparound: true })
         }
-        (GameKind::Pyramid, "Standard") => Some(NewDealVariant::Standard),
+        (GameKind::Pyramid, "No redeals") => Some(NewDealVariant::Pyramid { max_redeals: 0 }),
+        (GameKind::Pyramid, "1 redeal") => Some(NewDealVariant::Pyramid { max_redeals: 1 }),
+        (GameKind::Pyramid, "2 redeals") => Some(NewDealVariant::Pyramid { max_redeals: 2 }),
         _ => None,
     }
 }
@@ -1250,7 +1254,7 @@ const fn new_deal_variant_matches(game: GameKind, variant: NewDealVariant) -> bo
             | (GameKind::Spider, NewDealVariant::Spider(_))
             | (GameKind::FreeCell, NewDealVariant::FreeCell(_))
             | (GameKind::TriPeaks, NewDealVariant::TriPeaks { .. })
-            | (GameKind::Pyramid, NewDealVariant::Standard)
+            | (GameKind::Pyramid, NewDealVariant::Pyramid { .. })
     )
 }
 
@@ -1281,8 +1285,8 @@ fn prospective_game(request: PendingNewDeal, seed: u64) -> ProspectiveGame {
         (GameKind::TriPeaks, NewDealVariant::TriPeaks { wraparound }) => {
             ProspectiveGame::TriPeaks(TriPeaksGame::new(seed, tripeaks::Options { wraparound }))
         }
-        (GameKind::Pyramid, NewDealVariant::Standard) => {
-            ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options::default()))
+        (GameKind::Pyramid, NewDealVariant::Pyramid { max_redeals }) => {
+            ProspectiveGame::Pyramid(PyramidGame::new(seed, pyramid::Options { max_redeals }))
         }
         _ => unreachable!("new-deal variant compatibility was checked before seed reservation"),
     }
@@ -2100,6 +2104,41 @@ fn render_pyramid(app: &AppWindow, controller: &Controller) {
     app.set_redeals_remaining(i32::from(
         state.options.max_redeals.saturating_sub(state.redeals),
     ));
+    app.set_pyramid_max_redeals_active(i32::from(state.options.max_redeals));
+    render_pyramid_options(app, controller);
+}
+
+fn render_pyramid_options(app: &AppWindow, controller: &Controller) {
+    if let Some(options) = pyramid_ui_options_for_render(controller) {
+        app.set_pyramid_redeal_index(options.redeal_index);
+        app.set_pyramid_redeal_limit(options.redeal_limit.into());
+    }
+}
+
+fn pyramid_ui_options_for_render(controller: &Controller) -> Option<PyramidUiOptions> {
+    controller
+        .pending_new_deal
+        .is_none()
+        .then(|| pyramid_ui_options(controller.pyramid.state.options))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PyramidUiOptions {
+    redeal_index: i32,
+    redeal_limit: String,
+}
+
+fn pyramid_ui_options(options: pyramid::Options) -> PyramidUiOptions {
+    let (redeal_index, redeal_limit) = match options.max_redeals {
+        0 => (0, "No redeals".into()),
+        1 => (1, "1 redeal".into()),
+        2 => (2, "2 redeals".into()),
+        maximum => (-1, format!("{maximum} redeals")),
+    };
+    PyramidUiOptions {
+        redeal_index,
+        redeal_limit,
+    }
 }
 
 fn longest_column<T, const N: usize>(columns: &[Vec<T>; N]) -> i32 {
@@ -2572,6 +2611,12 @@ mod tests {
             local_profile_revision: None,
             local_profile_dirty: false,
             status: "Ready".into(),
+        }
+    }
+
+    fn drain_pyramid_stock(controller: &mut Controller) {
+        while !controller.pyramid.state.stock.is_empty() {
+            controller.draw_pyramid_stock();
         }
     }
 
@@ -3361,7 +3406,7 @@ mod tests {
         let mut controller = controller(85);
         controller.select_game("Pyramid");
         controller.pyramid_save_path = Some(path.clone());
-        controller.new_game("Standard");
+        controller.new_game("2 redeals");
         assert_eq!(controller.pyramid.state.options.max_redeals, 2);
 
         match controller.pyramid.hint().unwrap() {
@@ -3380,6 +3425,110 @@ mod tests {
         assert_eq!(controller.pyramid.state, moved);
         assert_eq!(load_pyramid_revisioned(&path).unwrap().0.state, moved);
         remove_save(&path);
+    }
+
+    #[test]
+    fn pyramid_redeal_limits_are_strict_atomic_reopenable_and_enforced() {
+        for (label, maximum) in [("No redeals", 0), ("1 redeal", 1), ("2 redeals", 2)] {
+            let path = test_save(&format!("pyramid-redeal-{maximum}"));
+            remove_save(&path);
+            let mut controller = controller(90 + u64::from(maximum));
+            controller.select_game("Pyramid");
+            controller.pyramid_save_path = Some(path.clone());
+            controller.new_game(label);
+            assert_eq!(controller.pyramid.state.options.max_redeals, maximum);
+            assert_eq!(
+                load_pyramid_revisioned(&path).unwrap().0,
+                controller.pyramid
+            );
+            remove_save(&path);
+        }
+
+        let game_path = test_save("pyramid-redeal-enforced");
+        let counter_path = test_save("pyramid-redeal-counter");
+        remove_save(&game_path);
+        remove_save(&counter_path);
+        let mut controller = controller(94);
+        controller.select_game("Pyramid");
+        controller.pyramid_save_path = Some(game_path.clone());
+        controller.deal_counters_path = Some(counter_path.clone());
+        controller.new_game("1 redeal");
+        drain_pyramid_stock(&mut controller);
+        controller.draw_pyramid_stock();
+        assert_eq!(controller.pyramid.state.redeals, 1);
+        drain_pyramid_stock(&mut controller);
+        let exhausted = controller.pyramid.clone();
+        let saved = fs::read(&game_path).unwrap();
+        let counters = fs::read(&counter_path).unwrap();
+        controller.draw_pyramid_stock();
+        assert_eq!(controller.status, "No Pyramid redeals remain");
+        assert_eq!(controller.pyramid, exhausted);
+        assert_eq!(fs::read(&game_path).unwrap(), saved);
+        assert_eq!(fs::read(&counter_path).unwrap(), counters);
+        controller.undo();
+        assert!(controller.pyramid.can_redo());
+        controller.redo();
+        assert_eq!(controller.pyramid, exhausted);
+        assert_eq!(load_pyramid_revisioned(&game_path).unwrap().0, exhausted);
+
+        controller.dirty[controller.active_index()] = true;
+        controller.new_game("No redeals");
+        let pending = controller.pending_new_deal;
+        let oversized = "R".repeat(4_096);
+        for invalid in [
+            "",
+            "no redeals",
+            " No redeals",
+            "No redeals ",
+            "0 redeals",
+            "3 redeals",
+            "1 redeal · trailing",
+            oversized.as_str(),
+        ] {
+            controller.new_game(invalid);
+            assert!(controller.pending_new_deal == pending, "{invalid:?}");
+            assert_eq!(controller.pyramid, exhausted, "{invalid:?}");
+            assert_eq!(fs::read(&game_path).unwrap(), saved, "{invalid:?}");
+            assert_eq!(fs::read(&counter_path).unwrap(), counters, "{invalid:?}");
+        }
+        assert_eq!(pyramid_ui_options_for_render(&controller), None);
+        assert_eq!(
+            fs::metadata(&game_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&counter_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        controller.discard_progress_and_start_pending();
+        assert_eq!(controller.pyramid.state.options.max_redeals, 0);
+        assert!(controller.pending_new_deal.is_none());
+        assert_eq!(
+            load_pyramid_revisioned(&game_path).unwrap().0,
+            controller.pyramid
+        );
+        remove_save(&game_path);
+        remove_save(&counter_path);
+    }
+
+    #[test]
+    fn reopened_pyramid_options_map_values_and_indices_without_a_display() {
+        for (maximum, index, label) in [
+            (0, 0, "No redeals"),
+            (1, 1, "1 redeal"),
+            (2, 2, "2 redeals"),
+            (u8::MAX, -1, "255 redeals"),
+        ] {
+            assert_eq!(
+                pyramid_ui_options(pyramid::Options {
+                    max_redeals: maximum,
+                }),
+                PyramidUiOptions {
+                    redeal_index: index,
+                    redeal_limit: label.into(),
+                }
+            );
+        }
     }
 
     #[test]
@@ -3409,7 +3558,7 @@ mod tests {
         controller.select_game("Pyramid");
         controller.next_seeds.pyramid = u64::MAX;
         let current = controller.pyramid.clone();
-        controller.new_game("Standard");
+        controller.new_game("2 redeals");
         assert_eq!(controller.pyramid, current);
         assert!(controller.pending_new_deal.is_some());
         assert!(controller.status.contains("No further deal number"));
@@ -4048,7 +4197,7 @@ mod tests {
 
         let hostile_pending = PendingNewDeal {
             game: GameKind::Klondike,
-            variant: NewDealVariant::Standard,
+            variant: NewDealVariant::Pyramid { max_redeals: 2 },
         };
         controller.pending_new_deal = Some(hostile_pending);
         controller.commit_pending_new_deal();
