@@ -2584,7 +2584,10 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::process::Command;
+    use std::path::Path;
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     fn test_save(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -3112,17 +3115,84 @@ mod tests {
         restarted.observe_active_profile();
     }
 
+    fn bounded_child_text(bytes: &[u8]) -> String {
+        const DIAGNOSTIC_LIMIT: usize = 8 * 1_024;
+        String::from_utf8_lossy(&bytes[..bytes.len().min(DIAGNOSTIC_LIMIT)]).into_owned()
+    }
+
+    fn run_spider_restart_phase(root: &Path, phase: &str, token: &str) {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "tests::spider_complete_deal_survives_normal_controller_restart",
+                "--exact",
+                "--nocapture",
+            ])
+            .env("XDG_DATA_HOME", root)
+            .env("SOLITAIRE_SPIDER_RESTART_PHASE", phase)
+            .env("SOLITAIRE_SPIDER_RESTART_ROOT", root)
+            .env("SOLITAIRE_SPIDER_RESTART_TOKEN", token)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if child.try_wait().unwrap().is_some() {
+                let output = child.wait_with_output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{phase} child stdout: {}\n{phase} child stderr: {}",
+                    bounded_child_text(&output.stdout),
+                    bounded_child_text(&output.stderr)
+                );
+                return;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "{phase} child exceeded 10 seconds; stdout: {}\nstderr: {}",
+                    bounded_child_text(&output.stdout),
+                    bounded_child_text(&output.stderr)
+                );
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     #[test]
     fn spider_complete_deal_survives_normal_controller_restart() {
         const CHILD_PHASE: &str = "SOLITAIRE_SPIDER_RESTART_PHASE";
+        const CHILD_ROOT: &str = "SOLITAIRE_SPIDER_RESTART_ROOT";
+        const CHILD_TOKEN: &str = "SOLITAIRE_SPIDER_RESTART_TOKEN";
         if let Ok(phase) = std::env::var(CHILD_PHASE) {
+            let isolated_root = PathBuf::from(std::env::var_os(CHILD_ROOT).unwrap());
+            let token = std::env::var(CHILD_TOKEN).unwrap();
+            assert_eq!(
+                std::env::var_os("XDG_DATA_HOME"),
+                Some(isolated_root.clone().into())
+            );
+            assert!(isolated_root.is_absolute());
+            assert!(
+                fs::canonicalize(&isolated_root)
+                    .unwrap()
+                    .starts_with(fs::canonicalize(std::env::temp_dir()).unwrap())
+            );
+            let marker = isolated_root.join(".spider-restart-token");
+            assert!(fs::symlink_metadata(&marker).unwrap().file_type().is_file());
+            assert_eq!(fs::read_to_string(marker).unwrap(), token);
             exercise_spider_restart_child(&phase);
             return;
         }
 
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let token = format!("{}-{nonce}", std::process::id());
         let root = std::env::temp_dir().join(format!(
-            "solitaire-controller-{}-spider-restart",
-            std::process::id()
+            "solitaire-controller-{}-{nonce}-spider-restart",
+            std::process::id(),
         ));
         let data = root.join("solitaire");
         let game_path = data.join("spider-save.json");
@@ -3130,6 +3200,9 @@ mod tests {
         remove_save(&game_path);
         remove_save(&profile_path);
         fs::create_dir_all(&data).unwrap();
+        let marker = root.join(".spider-restart-token");
+        fs::write(&marker, &token).unwrap();
+        fs::set_permissions(&marker, fs::Permissions::from_mode(0o600)).unwrap();
         fs::write(
             &game_path,
             include_bytes!("../tests/fixtures/spider-one-suit-near-win.json"),
@@ -3137,26 +3210,7 @@ mod tests {
         .unwrap();
         fs::set_permissions(&game_path, fs::Permissions::from_mode(0o600)).unwrap();
 
-        let run_phase = |phase: &str| {
-            let output = Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "tests::spider_complete_deal_survives_normal_controller_restart",
-                    "--exact",
-                    "--nocapture",
-                ])
-                .env("XDG_DATA_HOME", &root)
-                .env(CHILD_PHASE, phase)
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{phase} child stdout: {}\n{phase} child stderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        };
-
-        run_phase("complete");
+        run_spider_restart_phase(&root, "complete", &token);
         let completed_save = fs::read(&game_path).unwrap();
         let completed_profile = fs::read(&profile_path).unwrap();
         assert!(load_spider_revisioned(&game_path).unwrap().0.state.is_won());
@@ -3173,7 +3227,7 @@ mod tests {
             }
         );
 
-        run_phase("reopen");
+        run_spider_restart_phase(&root, "reopen", &token);
         assert_eq!(fs::read(&game_path).unwrap(), completed_save);
         assert_eq!(fs::read(&profile_path).unwrap(), completed_profile);
         for path in [&game_path, &profile_path] {
@@ -3194,6 +3248,7 @@ mod tests {
         ] {
             remove_save(&data.join(name));
         }
+        remove_save(&marker);
         let _ = fs::remove_dir(&data);
         let _ = fs::remove_dir(&root);
     }

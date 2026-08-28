@@ -40,7 +40,10 @@ production persistence loaders. A separate display-independent subprocess test
 now starts a fresh normal `Controller`, completes the final move, exercises
 undo/redo, exits, starts another fresh `Controller`, and proves the exact won
 game and one-time profile reopen byte-for-byte. This is source-process lifecycle
-evidence, not an installed process/window identity check. The clean installed-
+evidence, not an installed process/window identity check. Each child must prove
+its `XDG_DATA_HOME` matches a parent-created temporary root and nonce marker
+before constructing `Controller`; every phase has a ten-second deadline that
+kills and reaps a stalled child while retaining bounded diagnostics. The clean installed-
 process close and startup/reopen below remains a mandatory runtime gate.
 
 ## Exact-package Wayland gate
