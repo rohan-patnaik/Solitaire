@@ -72,12 +72,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("720fab04ab3528d1e8e66768ebf47a85dc2f94b1"));
     assert!(metadata.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
     assert!(metadata.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
-    assert!(metadata.contains("actions/runs/33150141503"));
+    assert!(metadata.contains("d3c384a188bd1281291bc02acf16ebbef8077849"));
+    assert!(metadata.contains("actions/runs/33155179947"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
-    assert!(generated.contains("actions/runs/33150141503"));
+    assert!(generated.contains("d3c384a188bd1281291bc02acf16ebbef8077849"));
+    assert!(generated.contains("actions/runs/33155179947"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -682,6 +683,38 @@ fn restart_current_deal_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_C0F61E8.md"));
     assert!(catalog.contains("0.1.0.r0.gc0f61e8-1"));
+}
+
+#[test]
+fn timed_klondike_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_D3C384A.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "d3c384a188bd1281291bc02acf16ebbef8077849",
+        "c0f61e85126072f74a10ffea1fcd831c8b3e3d34",
+        "dcbb1877f18b4f39880afbfb121991c9ef0be96c",
+        "returned PASS with zero actionable findings",
+        "actions/runs/33155179947",
+        "job/98796148931",
+        "job/98796149278",
+        "all 222",
+        "solitaire-omarchy 0.1.0.r0.gd3c384a-1",
+        "38dd27d4b5aee221c7adbd40843fb08d13300a2b197667a9cc1e163412b58b3e",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No Solitaire process existed",
+        "Nothing was enabled, summoned, focused, cycled, or restarted",
+        "authoritative `Stuff` mount was unavailable",
+        "deferred numbered-deal work remained untouched",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing d3c384a publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_D3C384A.md"));
+    assert!(catalog.contains("0.1.0.r0.gd3c384a-1"));
 }
 
 #[test]
@@ -1598,6 +1631,63 @@ fn klondike_timed_play_declares_keyboard_accessibility_and_checkpoint_contracts(
     }
     assert!(catalog.contains("docs/KLONDIKE_TIMED_PLAY_ACCEPTANCE.md"));
     assert!(catalog.contains("timed_klondike_checkpoint_failure_is_recoverable_and_fail_closed"));
+}
+
+#[test]
+fn klondike_left_handed_layout_declares_keyboard_accessibility_and_scope() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let evidence = include_str!("../docs/KLONDIKE_LEFT_HANDED_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "klondike-layout-mode: \"Right-handed\"",
+        "model: [\"Right-handed\", \"Left-handed\"]",
+        "current-value <=> root.klondike-layout-mode",
+        "current-index <=> root.klondike-layout-index",
+        "accessible-label: \"Klondike table layout for this session\"",
+        "pure callback klondike-top-x(int, float, bool) -> float",
+        "root.klondike-top-x(0, parent.width / 1px",
+        "root.klondike-top-x(1, parent.width / 1px",
+        "root.klondike-top-x(index + 2, parent.width / 1px",
+        "activated => { root.draw-stock(); }",
+        "activated => { root.waste-activated(); }",
+        "activated => { root.foundation-activated(index); }",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing handed UI contract: {contract}"
+        );
+    }
+    for contract in [
+        "app.on_klondike_top_x(klondike_top_x)",
+        "fn klondike_top_x(slot: i32, available_width: f32, left_handed: bool)",
+        "if !available_width.is_finite()",
+        "maximum - right_handed",
+        "klondike_handed_layout_is_an_exact_bounded_mirror",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing handed geometry contract: {contract}"
+        );
+    }
+    assert!(!controller.contains("set_klondike_layout_mode"));
+    for contract in [
+        "session-scoped",
+        "Right-handed remains the startup",
+        "Pile identities, suit indices, action routes, accessible names",
+        "seven tableau columns are intentionally unchanged",
+        "returns to Right-handed after process exit",
+        "fixed work and allocates nothing",
+        "No save, profile, counter, replay, fixture schema",
+        "remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing handed evidence boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/KLONDIKE_LEFT_HANDED_ACCEPTANCE.md"));
+    assert!(catalog.contains("owner-approved persisted settings model remain open"));
 }
 
 #[test]

@@ -30,6 +30,10 @@ Functional parity is achievable for the five core games and common collection fe
   transition and one-time profile across undo/redo, process exit, and a second
   fresh Controller's byte-identical reopen. The exact-package final transition,
   process/window identity, and remaining M1 product workflows are not complete.
+  A session-scoped right-/left-handed selector mirrors the Klondike top row with
+  bounded display-independent geometry while preserving pile identity and
+  keyboard order; persisted layout preferences and exact-package input remain
+  open.
 - Spider and FreeCell now have playable Slint surfaces backed exclusively by their deterministic engines. FreeCell can open any strict decimal `u64` deal number without consuming its durable next-deal sequence; these repository-defined numbers do not claim interoperability with another product's numbering algorithm. A normal seed-zero FreeCell replay reaches a one-move near-win and its controller final transition persists the win/profile exactly once across undo, redo, and reopen. Automated tests cover variants, legal move routing, scoring rules, undo/redo, hints, replay save/resume, corrupt replay rejection, adaptive long-column sizing, keyboard activation, and accessibility contracts. Spider's dependency-free hostile-action and fixed seed/mode action-space tests exercise rejection atomicity, conservation, exposure, replay, and history invariants. Its one-, two-, and four-suit selector now synchronizes reopened values and indices, preserves a dirty future choice across rendering, rejects hostile values atomically, and reports the active mode separately. A pinned normal one-suit replay reaches a production-reconstructed 7/8 state; controller coverage proves its final keyboard-routable move, exact 8/8 status, 0600 save, and idempotent 1/1 profile, while a subprocess gate proves completion and byte-identical won-game/profile reopen across two fresh normal Controller startups. Installed Spider one-, two-, and four-suit keyboard mutation, undo/redo, save/reopen, and AT-SPI acceptance passed at exact revision `d20ba41`; exact-package reopened-selector synchronization, final-transition/process-identity gates, drag/touch, full keyboard traversal, and spoken screen-reader acceptance remain open.
 - TriPeaks has a playable Slint surface backed by its deterministic engine, with
   Standard and optional Ace-King wrap rules, numbered deals, undo/redo, hints,
@@ -71,6 +75,9 @@ Functional parity is achievable for the five core games and common collection fe
   clock, pause rules, atomic checkpoints, stale-writer recovery, and monotonic
   undo/redo behavior have display-independent evidence; exact-package selector,
   visible clock, and AT-SPI acceptance remain open.
+- Right- and left-handed top-row layouts are keyboard/accessibility-declared and
+  geometry-tested across hostile widths. Exact-package input/visual acceptance
+  and an owner-approved persisted settings model remain open.
 
 ### M2 — Spider and FreeCell
 

@@ -155,6 +155,8 @@ export component AppWindow inherits Window {
     in-out property <int> klondike-redeal-index: 0;
     in-out property <string> klondike-timing-mode: "Untimed";
     in-out property <int> klondike-timing-index: 0;
+    in-out property <string> klondike-layout-mode: "Right-handed";
+    in-out property <int> klondike-layout-index: 0;
     in property <bool> klondike-timed-active;
     in property <string> elapsed-time: "00:00:00";
     in-out property <string> spider-suit-mode: "1 suit";
@@ -197,6 +199,7 @@ export component AppWindow inherits Window {
     callback discard-and-close-requested;
     callback reload-disk-requested;
     pure callback fan-spacing(int, float) -> float;
+    pure callback klondike-top-x(int, float, bool) -> float;
     pure callback tripeaks-x(int, float) -> float;
     pure callback pyramid-x(int, float) -> float;
     pure callback pyramid-y(int) -> float;
@@ -359,7 +362,14 @@ export component AppWindow inherits Window {
             }
             if root.game-kind == "Klondike": Button {
                 text: "Finish safe moves";
+                accessible-label: "Move every currently safe Klondike card to a foundation";
                 clicked => { root.autocomplete-requested(); }
+            }
+            if root.game-kind == "Klondike": ComboBox {
+                model: ["Right-handed", "Left-handed"];
+                current-value <=> root.klondike-layout-mode;
+                current-index <=> root.klondike-layout-index;
+                accessible-label: "Klondike table layout for this session";
             }
             Rectangle { horizontal-stretch: 1; }
         }
@@ -546,21 +556,22 @@ export component AppWindow inherits Window {
                 width: parent.width - 48px;
                 height: 150px;
                 EmptySlot {
+                    x: root.klondike-top-x(0, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
                     label: root.stock-count > 0 ? root.stock-count + " cards\nDraw" : "Recycle";
                     activated => { root.draw-stock(); }
                 }
                 if root.has-waste: CardFace {
-                    x: 126px;
+                    x: root.klondike-top-x(1, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
                     card: root.waste-card;
                     activated => { root.waste-activated(); }
                 }
                 if !root.has-waste: EmptySlot {
-                    x: 126px;
+                    x: root.klondike-top-x(1, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
                     label: "Waste";
                     activated => { root.waste-activated(); }
                 }
                 for foundation[index] in root.foundations: CardFace {
-                    x: parent.width - (4 - index) * 116px;
+                    x: root.klondike-top-x(index + 2, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
                     card: foundation;
                     activated => { root.foundation-activated(index); }
                 }

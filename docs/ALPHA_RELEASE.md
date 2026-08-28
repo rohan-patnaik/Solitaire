@@ -173,6 +173,15 @@ Wayland gate. See
 [`KLONDIKE_TIMED_PLAY_ACCEPTANCE.md`](KLONDIKE_TIMED_PLAY_ACCEPTANCE.md) and
 [`KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md`](KLONDIKE_REDEAL_LIMIT_ACCEPTANCE.md).
 
+Klondike now also offers a keyboard-focusable Right-handed or Left-handed table
+layout for the current process. Left-handed mode exactly mirrors stock, waste,
+and foundation geometry without changing pile identities, keyboard order, game
+state, persistence, scoring, or replay. The tableau remains unchanged. Focused
+geometry tests cover exact mirroring, narrow and negative widths, invalid slots,
+and non-finite inputs. The setting intentionally resets after process exit;
+persisting it is deferred pending an approved settings-storage design. See
+[`KLONDIKE_LEFT_HANDED_ACCEPTANCE.md`](KLONDIKE_LEFT_HANDED_ACCEPTANCE.md).
+
 Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
 replay with only the exposed King of Diamonds remaining in tableau column 1.
 Production replay reconstruction and the controller's keyboard-routable final
@@ -251,6 +260,9 @@ package files.
   selection, visible progression, AT-SPI state/value updates, pause behavior,
   and checkpoint/reopen remain pending. Time bonuses and penalties are not
   implemented.
+- Klondike handed-layout selection is automated source evidence only.
+  Exact-package keyboard input, visual mirroring, AT-SPI value/state updates,
+  narrow-window interaction, and foreground preservation remain pending.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
 - Long malformed-save and conflict messages use a dedicated full-width,

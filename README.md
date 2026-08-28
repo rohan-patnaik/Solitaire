@@ -40,6 +40,10 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
   Timed progress pauses outside active Klondike, during pending deal changes,
   and after a win; atomic checkpoints run every 15 seconds and before leaving
   the game or closing. Time is informational and does not alter scoring.
+- Choose Right-handed or Left-handed table layout from the keyboard-focusable
+  session selector. Left-handed mode mirrors stock, waste, and foundations while
+  preserving pile identities and keyboard order. Tableau columns are unchanged,
+  and the choice intentionally resets to Right-handed after process exit.
 - A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
   foundation move before victory. A bounded display-independent lifecycle gate
   starts a fresh Controller, exercises the final tableau/foundation route,

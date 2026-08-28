@@ -1612,6 +1612,7 @@ fn load_or_recover<T>(
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
     app.on_fan_spacing(bounded_fan_spacing);
+    app.on_klondike_top_x(klondike_top_x);
     app.on_tripeaks_x(tripeaks_x);
     app.on_pyramid_x(pyramid_x);
     app.on_pyramid_y(pyramid_y);
@@ -2773,6 +2774,31 @@ fn bounded_fan_spacing(card_count: i32, available_height: f32) -> f32 {
     ((available_height - CARD_HEIGHT) / f32::from(divisor)).clamp(MIN_SPACING, MAX_SPACING)
 }
 
+fn klondike_top_x(slot: i32, available_width: f32, left_handed: bool) -> f32 {
+    const CARD_WIDTH: f32 = 104.0;
+    const PILE_STEP: f32 = 116.0;
+    const WASTE_OFFSET: f32 = 126.0;
+
+    if !available_width.is_finite() {
+        return 0.0;
+    }
+    let maximum = (available_width - CARD_WIDTH).max(0.0);
+    let right_handed = match slot {
+        0 => 0.0,
+        1 => WASTE_OFFSET,
+        2..=5 => {
+            available_width - f32::from(i16::try_from(6 - slot).unwrap_or_default()) * PILE_STEP
+        }
+        _ => return 0.0,
+    }
+    .clamp(0.0, maximum);
+    if left_handed {
+        maximum - right_handed
+    } else {
+        right_handed
+    }
+}
+
 fn tripeaks_x(index: i32, available_width: f32) -> f32 {
     let step = ((available_width - 104.0) / 9.0).max(0.0);
     let slot = match index {
@@ -2991,6 +3017,31 @@ mod tests {
         assert!((bounded_fan_spacing(1, 410.0) - 30.0).abs() < f32::EPSILON);
         let extreme = bounded_fan_spacing(104, 410.0);
         assert!(extreme * 103.0 + 142.0 <= 410.0 + f32::EPSILON);
+    }
+
+    #[test]
+    fn klondike_handed_layout_is_an_exact_bounded_mirror() {
+        let width = 1_084.0;
+        let maximum = width - 104.0;
+        let right = [0.0, 126.0, 620.0, 736.0, 852.0, 968.0];
+        for (slot, expected) in right.into_iter().enumerate() {
+            let slot = i32::try_from(slot).unwrap();
+            assert!((klondike_top_x(slot, width, false) - expected).abs() < f32::EPSILON);
+            assert!((klondike_top_x(slot, width, true) + expected - maximum).abs() < f32::EPSILON);
+        }
+
+        for width in [-100.0, 0.0, 80.0, 104.0, 500.0] {
+            let maximum = (width - 104.0_f32).max(0.0);
+            for slot in -2..=7 {
+                for left_handed in [false, true] {
+                    let x = klondike_top_x(slot, width, left_handed);
+                    assert!(x.is_finite());
+                    assert!((0.0..=maximum).contains(&x));
+                }
+            }
+        }
+        assert!(klondike_top_x(0, f32::INFINITY, false).abs() < f32::EPSILON);
+        assert!(klondike_top_x(0, f32::NAN, true).abs() < f32::EPSILON);
     }
 
     #[test]
