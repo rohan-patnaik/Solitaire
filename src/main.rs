@@ -26,6 +26,84 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 slint::include_modules!();
 
 const KLONDIKE_TIMER_CHECKPOINT_SECONDS: u64 = 15;
+const POINTER_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
+
+#[derive(Clone, PartialEq, Eq)]
+enum KlondikePointerSource {
+    Waste,
+    Tableau { column: i32, card_index: i32 },
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct KlondikePointerIdentity {
+    source: KlondikePointerSource,
+    card: String,
+    deal_instance: String,
+    interaction_generation: String,
+}
+
+#[derive(Default)]
+struct PointerClickState {
+    pending: Option<KlondikePointerIdentity>,
+    double_armed: bool,
+}
+
+#[derive(Default)]
+struct PointerClickTimer {
+    timer: Timer,
+    state: RefCell<PointerClickState>,
+}
+
+impl PointerClickTimer {
+    fn pointer_pressed(&self, identity: &KlondikePointerIdentity) {
+        self.timer.stop();
+        let mut state = self.state.borrow_mut();
+        state.double_armed = state.pending.as_ref() == Some(identity);
+        if !state.double_armed {
+            state.pending = None;
+        }
+    }
+
+    fn pointer_clicked(
+        self: &Rc<Self>,
+        identity: KlondikePointerIdentity,
+        mut callback: impl FnMut() + 'static,
+    ) {
+        {
+            let mut state = self.state.borrow_mut();
+            if !state.double_armed {
+                state.pending = Some(identity.clone());
+            }
+        }
+        let weak = Rc::downgrade(self);
+        self.timer.start(
+            TimerMode::SingleShot,
+            POINTER_DOUBLE_CLICK_INTERVAL,
+            move || {
+                let Some(timer) = weak.upgrade() else {
+                    return;
+                };
+                let mut state = timer.state.borrow_mut();
+                if state.pending.as_ref() != Some(&identity) {
+                    return;
+                }
+                state.pending = None;
+                state.double_armed = false;
+                drop(state);
+                callback();
+            },
+        );
+    }
+
+    fn take_double(&self, identity: &KlondikePointerIdentity) -> bool {
+        self.timer.stop();
+        let mut state = self.state.borrow_mut();
+        let matched = state.double_armed && state.pending.as_ref() == Some(identity);
+        state.pending = None;
+        state.double_armed = false;
+        matched
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
@@ -120,6 +198,8 @@ impl Selection {
 struct Controller {
     active: GameKind,
     game: Game,
+    klondike_deal_instance: u64,
+    interaction_generation: u64,
     selection: Option<Selection>,
     save_path: Option<PathBuf>,
     spider: SpiderGame,
@@ -219,6 +299,8 @@ impl Controller {
         Self {
             active: GameKind::Klondike,
             game: saved.map_or_else(|| Game::new(seed, Options::default()), |(game, _)| game),
+            klondike_deal_instance: 0,
+            interaction_generation: 0,
             selection: None,
             save_path,
             spider,
@@ -302,6 +384,91 @@ impl Controller {
         self.status = format!("Selected {}", card_name(card.card));
     }
 
+    fn activate_tableau_pointer(
+        &mut self,
+        column: i32,
+        card_index: i32,
+        card: &str,
+        deal_instance: &str,
+        interaction_generation: &str,
+    ) {
+        let Some((_, current)) = self.klondike_tableau_top(
+            column,
+            card_index,
+            card,
+            deal_instance,
+            interaction_generation,
+        ) else {
+            return;
+        };
+        debug_assert_eq!(card_label(current), card);
+        self.activate_tableau(column, card_index);
+    }
+
+    fn double_activate_tableau(
+        &mut self,
+        column: i32,
+        card_index: i32,
+        card: &str,
+        deal_instance: &str,
+        interaction_generation: &str,
+    ) {
+        let Some((column, current)) = self.klondike_tableau_top(
+            column,
+            card_index,
+            card,
+            deal_instance,
+            interaction_generation,
+        ) else {
+            return;
+        };
+        self.apply(Action::Move {
+            from: Pile::Tableau(column),
+            to: Pile::Foundation(current.suit),
+            count: 1,
+        });
+    }
+
+    fn klondike_tableau_top(
+        &mut self,
+        column: i32,
+        card_index: i32,
+        expected_card: &str,
+        expected_deal_instance: &str,
+        expected_interaction_generation: &str,
+    ) -> Option<(u8, Card)> {
+        if !self.klondike_pointer_context_matches(
+            expected_deal_instance,
+            expected_interaction_generation,
+        ) {
+            return None;
+        }
+        let Ok(column) = u8::try_from(column) else {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        };
+        let Ok(card_index) = usize::try_from(card_index) else {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        };
+        let Some(pile) = self.game.state.tableau.get(usize::from(column)) else {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        };
+        let Some(card) = pile.get(card_index) else {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        };
+        if !card.face_up
+            || card_index.checked_add(1) != Some(pile.len())
+            || card_label(card.card) != expected_card
+        {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        }
+        Some((column, card.card))
+    }
+
     fn activate_waste(&mut self) {
         if let Some(selection) = self.selection {
             if selection == Selection::Waste {
@@ -316,6 +483,79 @@ impl Controller {
         } else {
             self.status = "The waste is empty".into();
         }
+    }
+
+    fn activate_waste_pointer(
+        &mut self,
+        card: &str,
+        deal_instance: &str,
+        interaction_generation: &str,
+    ) {
+        if self
+            .klondike_waste_top(card, deal_instance, interaction_generation)
+            .is_some()
+        {
+            self.activate_waste();
+        }
+    }
+
+    fn double_activate_waste(
+        &mut self,
+        card: &str,
+        deal_instance: &str,
+        interaction_generation: &str,
+    ) {
+        let Some(current) = self.klondike_waste_top(card, deal_instance, interaction_generation)
+        else {
+            return;
+        };
+        self.apply(Action::Move {
+            from: Pile::Waste,
+            to: Pile::Foundation(current.suit),
+            count: 1,
+        });
+    }
+
+    fn klondike_waste_top(
+        &mut self,
+        expected_card: &str,
+        expected_deal_instance: &str,
+        expected_interaction_generation: &str,
+    ) -> Option<Card> {
+        if !self.klondike_pointer_context_matches(
+            expected_deal_instance,
+            expected_interaction_generation,
+        ) {
+            return None;
+        }
+        let Some(card) = self.game.state.waste.last().copied() else {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        };
+        if card_label(card) != expected_card {
+            self.status = "That Klondike card is no longer available; click again".into();
+            return None;
+        }
+        Some(card)
+    }
+
+    fn klondike_pointer_context_matches(
+        &mut self,
+        expected_deal_instance: &str,
+        expected_interaction_generation: &str,
+    ) -> bool {
+        if self.active == GameKind::Klondike
+            && self.klondike_deal_instance.to_string() == expected_deal_instance
+            && self.interaction_generation.to_string() == expected_interaction_generation
+        {
+            return true;
+        }
+        self.reject_klondike_pointer();
+        false
+    }
+
+    fn reject_klondike_pointer(&mut self) {
+        self.status = "That Klondike card is no longer available; click again".into();
     }
 
     fn activate_foundation(&mut self, index: i32) {
@@ -354,13 +594,18 @@ impl Controller {
         if self.active == GameKind::Klondike && !self.checkpoint_klondike_elapsed() {
             return;
         }
-        self.active = match game {
+        let next = match game {
             "Spider" => GameKind::Spider,
             "FreeCell" => GameKind::FreeCell,
             "TriPeaks" => GameKind::TriPeaks,
             "Pyramid" => GameKind::Pyramid,
             _ => GameKind::Klondike,
         };
+        if self.active != next && (self.active == GameKind::Klondike || next == GameKind::Klondike)
+        {
+            self.klondike_deal_instance = self.klondike_deal_instance.wrapping_add(1);
+        }
+        self.active = next;
         self.selection = None;
         self.spider_selection = None;
         self.freecell_selection = None;
@@ -557,6 +802,7 @@ impl Controller {
         match candidate {
             ProspectiveGame::Klondike(game) => {
                 self.game = game;
+                self.klondike_deal_instance = self.klondike_deal_instance.wrapping_add(1);
                 self.klondike_elapsed_dirty = false;
                 self.klondike_uncheckpointed_seconds = 0;
             }
@@ -1257,6 +1503,7 @@ impl Controller {
     }
 
     fn discard_unsaved_and_close(&mut self) {
+        self.advance_interaction_generation();
         self.pending_new_deal = None;
         self.pending_new_deal_conflict = false;
         self.dirty = [false; 5];
@@ -1264,6 +1511,21 @@ impl Controller {
         self.klondike_elapsed_dirty = false;
         self.klondike_uncheckpointed_seconds = 0;
         self.status = "Unsaved progress and local statistics discarded; closing".into();
+    }
+
+    fn close_requested(&mut self) -> bool {
+        self.advance_interaction_generation();
+        let _ = self.checkpoint_klondike_elapsed();
+        if self.dirty.iter().any(|dirty| *dirty) || self.local_profile_dirty {
+            self.status =
+                "Unsaved changes remain. Retry save before closing the application.".into();
+            return false;
+        }
+        true
+    }
+
+    fn advance_interaction_generation(&mut self) {
+        self.interaction_generation = self.interaction_generation.wrapping_add(1);
     }
 
     fn reload_disk_copy(&mut self) {
@@ -1622,16 +1884,13 @@ fn main() -> Result<(), slint::PlatformError> {
         let controller = Rc::clone(&controller);
         app.window().on_close_requested(move || {
             let mut controller = controller.borrow_mut();
-            let _ = controller.checkpoint_klondike_elapsed();
-            if controller.dirty.iter().any(|dirty| *dirty) || controller.local_profile_dirty {
-                controller.status =
-                    "Unsaved changes remain. Retry save before closing the application.".into();
+            if controller.close_requested() {
+                slint::CloseRequestResponse::HideWindow
+            } else {
                 if let Some(app) = weak.upgrade() {
                     render(&app, &controller);
                 }
                 slint::CloseRequestResponse::KeepWindowShown
-            } else {
-                slint::CloseRequestResponse::HideWindow
             }
         });
     }
@@ -1703,6 +1962,193 @@ fn register_klondike_handlers(app: &AppWindow, controller: &Rc<RefCell<Controlle
                 state.activate_foundation(index);
             });
         });
+    }
+    register_klondike_pointer_handlers(app, &controller);
+}
+
+fn waste_pointer_identity(
+    card: &str,
+    deal_instance: &str,
+    interaction_generation: &str,
+) -> KlondikePointerIdentity {
+    KlondikePointerIdentity {
+        source: KlondikePointerSource::Waste,
+        card: card.into(),
+        deal_instance: deal_instance.into(),
+        interaction_generation: interaction_generation.into(),
+    }
+}
+
+fn tableau_pointer_identity(
+    column: i32,
+    card_index: i32,
+    card: &str,
+    deal_instance: &str,
+    interaction_generation: &str,
+) -> KlondikePointerIdentity {
+    KlondikePointerIdentity {
+        source: KlondikePointerSource::Tableau { column, card_index },
+        card: card.into(),
+        deal_instance: deal_instance.into(),
+        interaction_generation: interaction_generation.into(),
+    }
+}
+
+fn register_klondike_pointer_handlers(app: &AppWindow, controller: &Rc<RefCell<Controller>>) {
+    let pointer_click = Rc::new(PointerClickTimer::default());
+    register_klondike_waste_pointer_handlers(app, controller, &pointer_click);
+    register_klondike_tableau_pointer_handlers(app, controller, &pointer_click);
+}
+
+fn register_klondike_waste_pointer_handlers(
+    app: &AppWindow,
+    controller: &Rc<RefCell<Controller>>,
+    pointer_click: &Rc<PointerClickTimer>,
+) {
+    {
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_waste_pointer_pressed(move |card, deal_instance, interaction_generation| {
+            pointer_click.pointer_pressed(&waste_pointer_identity(
+                card.as_str(),
+                deal_instance.as_str(),
+                interaction_generation.as_str(),
+            ));
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(controller);
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_waste_pointer_activated(move |card, deal_instance, interaction_generation| {
+            let identity = waste_pointer_identity(
+                card.as_str(),
+                deal_instance.as_str(),
+                interaction_generation.as_str(),
+            );
+            let weak = weak.clone();
+            let controller = Rc::clone(&controller);
+            pointer_click.pointer_clicked(identity, move || {
+                if controller.borrow().interaction_generation.to_string()
+                    != interaction_generation.as_str()
+                {
+                    return;
+                }
+                update(&weak, &controller, |state| {
+                    state.activate_waste_pointer(
+                        card.as_str(),
+                        deal_instance.as_str(),
+                        interaction_generation.as_str(),
+                    );
+                });
+            });
+        });
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(controller);
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_waste_double_activated(move |card, deal_instance, interaction_generation| {
+            let identity = waste_pointer_identity(
+                card.as_str(),
+                deal_instance.as_str(),
+                interaction_generation.as_str(),
+            );
+            if !pointer_click.take_double(&identity) {
+                update(&weak, &controller, Controller::reject_klondike_pointer);
+                return;
+            }
+            update(&weak, &controller, |state| {
+                state.double_activate_waste(
+                    card.as_str(),
+                    deal_instance.as_str(),
+                    interaction_generation.as_str(),
+                );
+            });
+        });
+    }
+}
+
+fn register_klondike_tableau_pointer_handlers(
+    app: &AppWindow,
+    controller: &Rc<RefCell<Controller>>,
+    pointer_click: &Rc<PointerClickTimer>,
+) {
+    {
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_tableau_pointer_pressed(
+            move |column, index, card, deal_instance, interaction_generation| {
+                pointer_click.pointer_pressed(&tableau_pointer_identity(
+                    column,
+                    index,
+                    card.as_str(),
+                    deal_instance.as_str(),
+                    interaction_generation.as_str(),
+                ));
+            },
+        );
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(controller);
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_tableau_pointer_activated(
+            move |column, index, card, deal_instance, interaction_generation| {
+                let identity = tableau_pointer_identity(
+                    column,
+                    index,
+                    card.as_str(),
+                    deal_instance.as_str(),
+                    interaction_generation.as_str(),
+                );
+                let weak = weak.clone();
+                let controller = Rc::clone(&controller);
+                pointer_click.pointer_clicked(identity, move || {
+                    if controller.borrow().interaction_generation.to_string()
+                        != interaction_generation.as_str()
+                    {
+                        return;
+                    }
+                    update(&weak, &controller, |state| {
+                        state.activate_tableau_pointer(
+                            column,
+                            index,
+                            card.as_str(),
+                            deal_instance.as_str(),
+                            interaction_generation.as_str(),
+                        );
+                    });
+                });
+            },
+        );
+    }
+    {
+        let weak = app.as_weak();
+        let controller = Rc::clone(controller);
+        let pointer_click = Rc::clone(pointer_click);
+        app.on_tableau_double_activated(
+            move |column, index, card, deal_instance, interaction_generation| {
+                let identity = tableau_pointer_identity(
+                    column,
+                    index,
+                    card.as_str(),
+                    deal_instance.as_str(),
+                    interaction_generation.as_str(),
+                );
+                if !pointer_click.take_double(&identity) {
+                    update(&weak, &controller, Controller::reject_klondike_pointer);
+                    return;
+                }
+                update(&weak, &controller, |state| {
+                    state.double_activate_tableau(
+                        column,
+                        index,
+                        card.as_str(),
+                        deal_instance.as_str(),
+                        interaction_generation.as_str(),
+                    );
+                });
+            },
+        );
     }
 }
 
@@ -1913,6 +2359,7 @@ fn update(
 ) {
     let mut controller = controller.borrow_mut();
     operation(&mut controller);
+    controller.advance_interaction_generation();
     if let Some(app) = weak.upgrade() {
         render(&app, &controller);
     }
@@ -1920,6 +2367,7 @@ fn update(
 
 fn render(app: &AppWindow, controller: &Controller) {
     app.set_game_kind(controller.game_name().into());
+    app.set_interaction_generation(controller.interaction_generation.to_string().into());
     app.set_can_undo(controller.can_undo());
     app.set_can_redo(controller.can_redo());
     app.set_has_unsaved_changes(
@@ -2022,6 +2470,7 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
     app.set_longest_column(longest_column(&state.tableau));
     app.set_deal_id(i32::try_from(state.seed).unwrap_or(i32::MAX));
     app.set_deal_number(SharedString::default());
+    app.set_klondike_deal_instance(controller.klondike_deal_instance.to_string().into());
     app.set_redeals(i32::from(state.redeals));
     app.set_redeals_remaining(state.options.max_redeals.map_or(-1, |maximum| {
         i32::from(maximum.saturating_sub(state.redeals))
@@ -2856,6 +3305,26 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+    struct TimerOnlyPlatform;
+
+    impl slint::platform::Platform for TimerOnlyPlatform {
+        fn create_window_adapter(
+            &self,
+        ) -> Result<Rc<dyn slint::platform::WindowAdapter>, slint::PlatformError> {
+            Err(slint::PlatformError::NoEventLoopProvider)
+        }
+    }
+
+    fn ensure_timer_platform() {
+        let _ = slint::platform::set_platform(Box::new(TimerOnlyPlatform));
+        slint::platform::update_timers_and_animations();
+    }
+
+    fn expire_pointer_timer() {
+        std::thread::sleep(POINTER_DOUBLE_CLICK_INTERVAL + Duration::from_millis(50));
+        slint::platform::update_timers_and_animations();
+    }
+
     fn test_save(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "solitaire-controller-{}-{name}.json",
@@ -2872,6 +3341,8 @@ mod tests {
         Controller {
             active: GameKind::Klondike,
             game: Game::new(seed, Options::default()),
+            klondike_deal_instance: 0,
+            interaction_generation: 0,
             selection: None,
             save_path: None,
             spider: SpiderGame::new(seed, SuitMode::One),
@@ -3042,6 +3513,273 @@ mod tests {
         }
         assert!(klondike_top_x(0, f32::INFINITY, false).abs() < f32::EPSILON);
         assert!(klondike_top_x(0, f32::NAN, true).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn pointer_click_timer_is_idle_single_shot_and_cancelable() {
+        ensure_timer_platform();
+        let calls = Rc::new(Cell::new(0_u8));
+        let timer = Rc::new(PointerClickTimer::default());
+        let identity = waste_pointer_identity("A♣", "0", "0");
+        assert_eq!(calls.get(), 0);
+        assert!(!timer.timer.running());
+
+        let fired = Rc::clone(&calls);
+        timer.pointer_clicked(identity.clone(), move || fired.set(fired.get() + 1));
+        assert!(timer.timer.running());
+        expire_pointer_timer();
+        assert_eq!(calls.get(), 1);
+        assert!(!timer.timer.running());
+        expire_pointer_timer();
+        assert_eq!(calls.get(), 1);
+
+        let fired = Rc::clone(&calls);
+        timer.pointer_clicked(identity.clone(), move || fired.set(fired.get() + 1));
+        timer.pointer_pressed(&identity);
+        expire_pointer_timer();
+        assert_eq!(calls.get(), 1);
+        assert!(!timer.timer.running());
+    }
+
+    #[test]
+    fn deferred_pointer_click_cannot_overtake_keyboard_or_stock_input() {
+        ensure_timer_platform();
+        let timer = Rc::new(PointerClickTimer::default());
+        let controller = Rc::new(RefCell::new(controller(0)));
+        let tableau = controller.borrow().game.state.tableau[0].clone();
+        let index = i32::try_from(tableau.len() - 1).unwrap();
+        let card = card_label(tableau.last().unwrap().card);
+
+        let delayed = Rc::clone(&controller);
+        let delayed_card = card.clone();
+        let identity = tableau_pointer_identity(0, index, &card, "0", "0");
+        timer.pointer_clicked(identity, move || {
+            let mut state = delayed.borrow_mut();
+            if state.interaction_generation == 0 {
+                state.activate_tableau_pointer(0, index, &delayed_card, "0", "0");
+            }
+        });
+        let keyboard_index =
+            i32::try_from(controller.borrow().game.state.tableau[1].len() - 1).unwrap();
+        controller.borrow_mut().activate_tableau(1, keyboard_index);
+        controller.borrow_mut().interaction_generation = 1;
+        let keyboard_selection = controller.borrow().selection;
+        expire_pointer_timer();
+        assert!(controller.borrow().selection == keyboard_selection);
+        assert_eq!(controller.borrow().interaction_generation, 1);
+
+        let delayed = Rc::clone(&controller);
+        let delayed_card = card;
+        let identity = tableau_pointer_identity(0, index, &delayed_card, "0", "1");
+        timer.pointer_clicked(identity, move || {
+            let mut state = delayed.borrow_mut();
+            if state.interaction_generation == 1 {
+                state.activate_tableau_pointer(0, index, &delayed_card, "0", "1");
+            }
+        });
+        controller.borrow_mut().draw_or_recycle();
+        controller.borrow_mut().interaction_generation = 2;
+        let after_stock = controller.borrow().game.clone();
+        let after_stock_selection = controller.borrow().selection;
+        expire_pointer_timer();
+        assert_eq!(controller.borrow().game, after_stock);
+        assert!(controller.borrow().selection == after_stock_selection);
+        assert_eq!(controller.borrow().interaction_generation, 2);
+    }
+
+    #[test]
+    fn double_click_requires_matching_first_click_identity() {
+        ensure_timer_platform();
+        let timer = Rc::new(PointerClickTimer::default());
+        let direct = waste_pointer_identity("A♣", "0", "0");
+        assert!(!timer.take_double(&direct));
+
+        let game_path = test_save("double-click-rebase");
+        remove_save(&game_path);
+        fs::write(&game_path, b"owner-bytes").unwrap();
+        let controller = Rc::new(RefCell::new(controller(0)));
+        controller.borrow_mut().draw_or_recycle();
+        let first_card = *controller.borrow().game.state.waste.last().unwrap();
+        let first = waste_pointer_identity(&card_label(first_card), "0", "0");
+        timer.pointer_clicked(first, || {});
+
+        controller.borrow_mut().draw_or_recycle();
+        controller.borrow_mut().interaction_generation = 1;
+        let second_card = *controller.borrow().game.state.waste.last().unwrap();
+        let second = waste_pointer_identity(&card_label(second_card), "0", "1");
+        timer.pointer_pressed(&second);
+        timer.pointer_clicked(second.clone(), || {});
+        let before_game = controller.borrow().game.clone();
+        let before_selection = controller.borrow().selection;
+        let before_profile = controller.borrow().local_profile.clone();
+        assert!(!timer.take_double(&second));
+        assert_eq!(controller.borrow().game, before_game);
+        assert!(controller.borrow().selection == before_selection);
+        assert_eq!(controller.borrow().local_profile, before_profile);
+        assert_eq!(fs::read(&game_path).unwrap(), b"owner-bytes");
+
+        let legitimate = tableau_pointer_identity(2, 3, "Q♥", "7", "9");
+        timer.pointer_clicked(legitimate.clone(), || {});
+        timer.pointer_pressed(&legitimate);
+        timer.pointer_clicked(legitimate.clone(), || {});
+        assert!(timer.take_double(&legitimate));
+        expire_pointer_timer();
+        remove_save(&game_path);
+    }
+
+    #[test]
+    fn blocked_close_invalidates_a_pending_pointer_click() {
+        ensure_timer_platform();
+        let timer = Rc::new(PointerClickTimer::default());
+        let game_path = test_save("blocked-close-pointer");
+        remove_save(&game_path);
+        fs::write(&game_path, b"owner-close-bytes").unwrap();
+        let controller = Rc::new(RefCell::new(controller(0)));
+        let tableau = controller.borrow().game.state.tableau[0].clone();
+        let index = i32::try_from(tableau.len() - 1).unwrap();
+        let card = card_label(tableau.last().unwrap().card);
+        let identity = tableau_pointer_identity(0, index, &card, "0", "0");
+        let delayed = Rc::clone(&controller);
+        let delayed_game_path = game_path.clone();
+        timer.pointer_clicked(identity, move || {
+            if delayed.borrow().interaction_generation == 0 {
+                let mut state = delayed.borrow_mut();
+                state.draw_or_recycle();
+                state.activate_tableau_pointer(0, index, &card, "0", "0");
+                state
+                    .local_profile
+                    .observe(ProfileGameKind::Klondike, 0, false)
+                    .unwrap();
+                drop(state);
+                fs::write(&delayed_game_path, b"stale-close-callback-ran").unwrap();
+            }
+        });
+        controller.borrow_mut().dirty[0] = true;
+        controller.borrow_mut().local_profile_dirty = true;
+        let before_game = controller.borrow().game.clone();
+        let before_selection = controller.borrow().selection;
+        let before_profile = controller.borrow().local_profile.clone();
+
+        assert!(!controller.borrow_mut().close_requested());
+        assert_eq!(controller.borrow().interaction_generation, 1);
+        expire_pointer_timer();
+        assert_eq!(controller.borrow().game, before_game);
+        assert!(controller.borrow().selection == before_selection);
+        assert_eq!(controller.borrow().local_profile, before_profile);
+        assert_eq!(fs::read(&game_path).unwrap(), b"owner-close-bytes");
+        remove_save(&game_path);
+    }
+
+    #[test]
+    fn klondike_double_activation_is_exact_atomic_and_undoable() {
+        let envelope: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/klondike-seed-zero-near-win.json"
+        ))
+        .unwrap();
+        let replay: solitaire::replay::Replay<Action, solitaire::klondike::ReplaySetup> =
+            serde_json::from_value(envelope["payload"].clone()).unwrap();
+        let near_win = Game::from_replay(&replay).unwrap();
+        let mut controller = controller(0);
+        controller.game = near_win.clone();
+        controller.selection = Some(Selection::Waste);
+        let token = card_label(controller.game.state.tableau[0][0].card);
+
+        for (column, index, supplied) in [
+            (-1, 0, token.as_str()),
+            (i32::MAX, 0, token.as_str()),
+            (0, -1, token.as_str()),
+            (0, 1, token.as_str()),
+            (0, 0, "Q♦"),
+        ] {
+            controller.double_activate_tableau(column, index, supplied, "0", "0");
+            assert_eq!(controller.game, near_win);
+            assert!(controller.selection == Some(Selection::Waste));
+            assert!(controller.status.contains("click again"));
+        }
+        let oversized = "K".repeat(4_096);
+        controller.double_activate_tableau(0, 0, &oversized, "0", "0");
+        assert_eq!(controller.game, near_win);
+        assert!(controller.selection == Some(Selection::Waste));
+
+        controller.klondike_deal_instance = 1;
+        controller.double_activate_tableau(0, 0, &token, "0", "0");
+        assert_eq!(controller.game, near_win);
+        assert!(controller.selection == Some(Selection::Waste));
+        controller.klondike_deal_instance = 0;
+        controller.active = GameKind::Spider;
+        controller.double_activate_tableau(0, 0, &token, "0", "0");
+        assert_eq!(controller.game, near_win);
+        assert!(controller.selection == Some(Selection::Waste));
+        controller.active = GameKind::Klondike;
+
+        controller.interaction_generation = 1;
+        controller.double_activate_tableau(0, 0, &token, "0", "0");
+        assert!(controller.selection == Some(Selection::Waste));
+        controller.interaction_generation = 0;
+
+        controller.select_game("Spider");
+        controller.select_game("Klondike");
+        controller.selection = Some(Selection::Waste);
+        controller.double_activate_tableau(0, 0, &token, "0", "0");
+        assert_eq!(controller.game, near_win);
+        assert!(controller.selection == Some(Selection::Waste));
+        assert!(controller.status.contains("click again"));
+        let current_instance = controller.klondike_deal_instance.to_string();
+
+        controller.selection = None;
+        controller.activate_tableau_pointer(0, 0, &token, &current_instance, "0");
+        assert!(
+            controller.selection
+                == Some(Selection::Tableau {
+                    column: 0,
+                    count: 1,
+                })
+        );
+        assert_eq!(controller.game, near_win);
+
+        controller.selection = Some(Selection::Waste);
+        controller.double_activate_tableau(0, 0, &token, &current_instance, "0");
+        assert!(controller.game.state.is_won());
+        assert!(controller.selection.is_none());
+        assert_eq!(controller.game.state.moves, 156);
+        assert_eq!(controller.game.state.score, 365);
+        assert!(controller.game.undo());
+        assert_eq!(controller.game.state, near_win.state);
+        assert_eq!(controller.game.replay(), near_win.replay());
+        assert!(controller.game.redo());
+        assert!(controller.game.state.is_won());
+
+        let won = controller.game.clone();
+        controller.double_activate_waste("A♣", &current_instance, "0");
+        assert_eq!(controller.game, won);
+        assert!(controller.status.contains("click again"));
+
+        let mut waste_route = None;
+        'seeds: for seed in 0..16 {
+            let mut game = Game::new(seed, Options::default());
+            while !game.state.stock.is_empty() {
+                game.apply(Action::Draw).unwrap();
+                let card = *game.state.waste.last().unwrap();
+                let action = Action::Move {
+                    from: Pile::Waste,
+                    to: Pile::Foundation(card.suit),
+                    count: 1,
+                };
+                let mut expected = game.clone();
+                if expected.apply(action).is_ok() {
+                    waste_route = Some((game, card, expected));
+                    break 'seeds;
+                }
+            }
+        }
+        let (waste_game, waste_card, expected) = waste_route.expect("bounded waste route");
+        let mut waste_controller = self::controller(waste_game.state.seed);
+        waste_controller.game = waste_game.clone();
+        waste_controller.double_activate_waste(&card_label(waste_card), "0", "0");
+        assert_eq!(waste_controller.game, expected);
+        assert!(waste_controller.game.undo());
+        assert_eq!(waste_controller.game.state, waste_game.state);
+        assert_eq!(waste_controller.game.replay(), waste_game.replay());
     }
 
     #[test]

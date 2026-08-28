@@ -73,12 +73,13 @@ fn capability_catalog_distinguishes_baseline_from_pinned_application_source() {
     assert!(metadata.contains("478a10a9aed6751c1cd9b90b0122d85faad021dd"));
     assert!(metadata.contains("c0f61e85126072f74a10ffea1fcd831c8b3e3d34"));
     assert!(metadata.contains("d3c384a188bd1281291bc02acf16ebbef8077849"));
-    assert!(metadata.contains("actions/runs/33155179947"));
+    assert!(metadata.contains("4e80b44b4ea3d4820fa5e38f1e8e71aa4e33386a"));
+    assert!(metadata.contains("actions/runs/33163743373"));
     assert!(metadata.contains("\"scope\": \"application_source\""));
     assert!(generator.contains("data.get(\"current_tip_ci\")"));
     assert!(generated.contains("Pinned application-source CI:"));
-    assert!(generated.contains("d3c384a188bd1281291bc02acf16ebbef8077849"));
-    assert!(generated.contains("actions/runs/33155179947"));
+    assert!(generated.contains("4e80b44b4ea3d4820fa5e38f1e8e71aa4e33386a"));
+    assert!(generated.contains("actions/runs/33163743373"));
     assert!(generated.contains("(success)."));
     assert!(generated.contains("| Complete | 1 |"));
     assert!(generated.contains("| Partial | 10 |"));
@@ -715,6 +716,38 @@ fn timed_klondike_publication_gate_is_pinned_without_overclaim() {
     }
     assert!(catalog.contains("docs/PUBLICATION_D3C384A.md"));
     assert!(catalog.contains("0.1.0.r0.gd3c384a-1"));
+}
+
+#[test]
+fn left_handed_klondike_publication_gate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/PUBLICATION_4E80B44.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "4e80b44b4ea3d4820fa5e38f1e8e71aa4e33386a",
+        "d3c384a188bd1281291bc02acf16ebbef8077849",
+        "cb4756907d2791a1975f550c7dcd438aa10e9a6f",
+        "returned PASS with zero actionable findings",
+        "actions/runs/33163743373",
+        "job/98824121006",
+        "job/98824120717",
+        "all 225",
+        "solitaire-omarchy 0.1.0.r0.g4e80b44-1",
+        "5467caed810b1e903eed151ec57655f4bc56204cfaf2a40f889da13c8ef34f77",
+        "omarchy plugin update io.github.rohan-patnaik.solitaire --yes",
+        "enabled:false",
+        "active:false",
+        "No Solitaire process existed",
+        "Nothing was enabled, summoned, focused, cycled, or restarted",
+        "authoritative `Stuff` mount was unavailable",
+        "deferred numbered-deal work remained untouched",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing 4e80b44 publication boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/PUBLICATION_4E80B44.md"));
+    assert!(catalog.contains("0.1.0.r0.g4e80b44-1"));
 }
 
 #[test]
@@ -1606,7 +1639,7 @@ fn klondike_timed_play_declares_keyboard_accessibility_and_checkpoint_contracts(
         "fn checkpoint_klondike_elapsed(&mut self) -> bool",
         "let last_tick = Cell::new(Instant::now())",
         "now.saturating_duration_since(previous).as_secs()",
-        "let _ = controller.checkpoint_klondike_elapsed()",
+        "let _ = self.checkpoint_klondike_elapsed()",
     ] {
         assert!(
             controller.contains(contract),
@@ -1688,6 +1721,108 @@ fn klondike_left_handed_layout_declares_keyboard_accessibility_and_scope() {
     }
     assert!(catalog.contains("docs/KLONDIKE_LEFT_HANDED_ACCEPTANCE.md"));
     assert!(catalog.contains("owner-approved persisted settings model remain open"));
+}
+
+#[test]
+fn klondike_double_click_declares_pointer_keyboard_and_recovery_contracts() {
+    let ui = include_str!("../ui/app.slint");
+    let controller = include_str!("../src/main.rs");
+    let evidence = include_str!("../docs/KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    for contract in [
+        "pointer-double-activation: false",
+        "in property <string> pointer-context",
+        "in property <string> pointer-generation",
+        "callback pointer-pressed(string, string, string)",
+        "callback pointer-activated(string, string, string)",
+        "callback double-activated(string, string, string)",
+        "event.button == PointerEventButton.left",
+        "event.kind == PointerEventKind.down",
+        "root.pointer-pressed(root.card.label, root.pointer-context, root.pointer-generation)",
+        "root.pointer-activated(root.card.label, root.pointer-context, root.pointer-generation)",
+        "root.double-activated(root.card.label, root.pointer-context, root.pointer-generation)",
+        "accessible-action-default => { root.activated(); }",
+        "if (!event.repeat) { root.activated(); }",
+        "pointer-double-activation: true",
+        "pointer-context: root.klondike-deal-instance",
+        "pointer-generation: root.interaction-generation",
+        "pointer-double-activation: card.face-up && card-index == column.cards.length - 1",
+        "root.waste-pointer-pressed(card, context, generation)",
+        "root.tableau-pointer-pressed(column-index, card-index, card, context, generation)",
+        "root.waste-pointer-activated(card, context, generation)",
+        "root.waste-double-activated(card, context, generation)",
+        "root.tableau-pointer-activated(column-index, card-index, card, context, generation)",
+        "root.tableau-double-activated(column-index, card-index, card, context, generation)",
+    ] {
+        assert!(
+            ui.contains(contract),
+            "missing double-click UI contract: {contract}"
+        );
+    }
+    assert!(!ui.contains("single-click := Timer"));
+    for contract in [
+        "const POINTER_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500)",
+        "struct PointerClickTimer",
+        "struct KlondikePointerIdentity",
+        "double_armed",
+        "TimerMode::SingleShot",
+        "app.on_waste_pointer_pressed",
+        "app.on_tableau_pointer_pressed",
+        "fn pointer_pressed",
+        "fn pointer_clicked",
+        "fn take_double",
+        "fn close_requested",
+        "fn advance_interaction_generation",
+        "self.interaction_generation = self.interaction_generation.wrapping_add(1)",
+        "set_interaction_generation",
+        "fn activate_tableau_pointer",
+        "fn double_activate_tableau",
+        "fn klondike_tableau_top",
+        "fn activate_waste_pointer",
+        "fn double_activate_waste",
+        "fn klondike_waste_top",
+        "klondike_deal_instance.wrapping_add(1)",
+        "set_klondike_deal_instance",
+        "That Klondike card is no longer available; click again",
+        "pointer_click_timer_is_idle_single_shot_and_cancelable",
+        "deferred_pointer_click_cannot_overtake_keyboard_or_stock_input",
+        "double_click_requires_matching_first_click_identity",
+        "blocked_close_invalidates_a_pending_pointer_click",
+        "klondike_double_activation_is_exact_atomic_and_undoable",
+        "app.on_waste_pointer_activated",
+        "app.on_waste_double_activated",
+        "app.on_tableau_pointer_activated",
+        "app.on_tableau_double_activated",
+    ] {
+        assert!(
+            controller.contains(contract),
+            "missing double-click controller contract: {contract}"
+        );
+    }
+    for contract in [
+        "single pointer click",
+        "double-click",
+        "Keyboard Enter/Space and the accessibility default action remain immediate",
+        "4 KiB tokens",
+        "Klondike deal-instance token",
+        "interaction generation",
+        "zero idle callbacks",
+        "intervening immediate card activation and stock mutation",
+        "direct double callback without a first click",
+        "first click's complete source/card/deal/generation",
+        "blocked or confirmed close requests",
+        "dirty/profile-dirty close guard",
+        "actionable retry status",
+        "Drag/drop remains explicitly deferred",
+        "remain Partial",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing double-click evidence boundary: {contract}"
+        );
+    }
+    assert!(catalog.contains("docs/KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md"));
+    assert!(catalog.contains("exact-package pointer timing, touch, AT-SPI"));
 }
 
 #[test]

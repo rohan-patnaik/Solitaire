@@ -182,6 +182,25 @@ and non-finite inputs. The setting intentionally resets after process exit;
 persisting it is deferred pending an approved settings-storage design. See
 [`KLONDIKE_LEFT_HANDED_ACCEPTANCE.md`](KLONDIKE_LEFT_HANDED_ACCEPTANCE.md).
 
+Exposed Klondike waste and top-tableau cards now distinguish pointer
+single-click from double-click with one bounded application-scoped 500 ms Rust
+`SingleShot` timer.
+Single-click retains select/move behavior; double-click requests one direct suit
+foundation move through the existing deterministic action and persistence path.
+The captured card label, ephemeral deal-instance token, interaction generation,
+and exact source must still match when the callback runs, so stale, overtaken,
+hostile, covered, reloaded, or changed-card input fails closed. The timer is
+stopped on the second pointer-down, has no idle or repeated wakeups, and cannot
+overtake intervening stock, toolbar, pointer, keyboard, or accessibility input.
+Both rejected and confirmed close requests invalidate pending gestures before
+checkpoint or close handling.
+The first click's full identity remains retained across timer cancellation, so a
+new card rebound into the same waste/tableau item cannot become the second half
+of the gesture, and an unarmed direct double callback fails closed.
+Keyboard Enter/Space and
+accessibility-default activation remain immediate. See
+[`KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md`](KLONDIKE_DOUBLE_CLICK_ACCEPTANCE.md).
+
 Klondike deal zero also has a checked-in normal 155-action draw-one/Standard
 replay with only the exposed King of Diamonds remaining in tableau column 1.
 Production replay reconstruction and the controller's keyboard-routable final
@@ -263,6 +282,9 @@ package files.
 - Klondike handed-layout selection is automated source evidence only.
   Exact-package keyboard input, visual mirroring, AT-SPI value/state updates,
   narrow-window interaction, and foreground preservation remain pending.
+- Klondike double-click is automated source evidence only. Exact-package
+  pointer timing, stale-card recovery during a pending click, touch double tap,
+  visible focus, AT-SPI updates, and foreground preservation remain pending.
 - Orca was not installed. AT-SPI was inspected, but spoken screen-reader output
   was not accepted.
 - Long malformed-save and conflict messages use a dedicated full-width,

@@ -22,7 +22,13 @@ export struct UiPyramidCard {
 
 component CardFace inherits Rectangle {
     in property <UiCard> card;
+    in property <bool> pointer-double-activation: false;
+    in property <string> pointer-context;
+    in property <string> pointer-generation;
     callback activated;
+    callback pointer-pressed(string, string, string);
+    callback pointer-activated(string, string, string);
+    callback double-activated(string, string, string);
 
     width: 104px;
     height: 142px;
@@ -65,7 +71,27 @@ component CardFace inherits Rectangle {
         font-weight: 700;
     }
 
-    TouchArea { clicked => { root.activated(); } }
+    TouchArea {
+        pointer-event(event) => {
+            if (root.pointer-double-activation
+                    && event.button == PointerEventButton.left
+                    && event.kind == PointerEventKind.down) {
+                root.pointer-pressed(root.card.label, root.pointer-context, root.pointer-generation);
+            }
+        }
+        clicked => {
+            if (root.pointer-double-activation) {
+                root.pointer-activated(root.card.label, root.pointer-context, root.pointer-generation);
+            } else {
+                root.activated();
+            }
+        }
+        double-clicked => {
+            if (root.pointer-double-activation) {
+                root.double-activated(root.card.label, root.pointer-context, root.pointer-generation);
+            }
+        }
+    }
     card-focus := FocusScope {
         x: 0;
         width: 0;
@@ -136,6 +162,8 @@ export component AppWindow inherits Window {
     in property <int> longest-column;
     in property <int> deal-id;
     in property <string> deal-number;
+    in property <string> klondike-deal-instance;
+    in property <string> interaction-generation;
     in property <int> redeals;
     in property <int> redeals-remaining;
     in property <string> status-text: "Ready";
@@ -175,7 +203,13 @@ export component AppWindow inherits Window {
     callback new-freecell-deal(string);
     callback draw-stock;
     callback waste-activated;
+    callback waste-pointer-pressed(string, string, string);
+    callback waste-pointer-activated(string, string, string);
+    callback waste-double-activated(string, string, string);
     callback tableau-activated(int, int);
+    callback tableau-pointer-pressed(int, int, string, string, string);
+    callback tableau-pointer-activated(int, int, string, string, string);
+    callback tableau-double-activated(int, int, string, string, string);
     callback foundation-activated(int);
     callback spider-deal-stock;
     callback spider-tableau-activated(int, int);
@@ -563,7 +597,13 @@ export component AppWindow inherits Window {
                 if root.has-waste: CardFace {
                     x: root.klondike-top-x(1, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
                     card: root.waste-card;
+                    pointer-double-activation: true;
+                    pointer-context: root.klondike-deal-instance;
+                    pointer-generation: root.interaction-generation;
                     activated => { root.waste-activated(); }
+                    pointer-pressed(card, context, generation) => { root.waste-pointer-pressed(card, context, generation); }
+                    pointer-activated(card, context, generation) => { root.waste-pointer-activated(card, context, generation); }
+                    double-activated(card, context, generation) => { root.waste-double-activated(card, context, generation); }
                 }
                 if !root.has-waste: EmptySlot {
                     x: root.klondike-top-x(1, parent.width / 1px, root.klondike-layout-mode == "Left-handed") * 1px;
@@ -592,7 +632,13 @@ export component AppWindow inherits Window {
                     for card[card-index] in column.cards: CardFace {
                         y: card-index * root.fan-spacing(column.cards.length, parent.height / 1px) * 1px;
                         card: card;
+                        pointer-double-activation: card.face-up && card-index == column.cards.length - 1;
+                        pointer-context: root.klondike-deal-instance;
+                        pointer-generation: root.interaction-generation;
                         activated => { root.tableau-activated(column-index, card-index); }
+                        pointer-pressed(card, context, generation) => { root.tableau-pointer-pressed(column-index, card-index, card, context, generation); }
+                        pointer-activated(card, context, generation) => { root.tableau-pointer-activated(column-index, card-index, card, context, generation); }
+                        double-activated(card, context, generation) => { root.tableau-double-activated(column-index, card-index, card, context, generation); }
                     }
                 }
             }

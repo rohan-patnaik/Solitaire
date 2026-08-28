@@ -44,6 +44,10 @@ On Arch Linux the native prerequisites are provided by `fontconfig`, `wayland`, 
   session selector. Left-handed mode mirrors stock, waste, and foundations while
   preserving pile identities and keyboard order. Tableau columns are unchanged,
   and the choice intentionally resets to Right-handed after process exit.
+- Single-click exposed waste and top-tableau cards for the existing select/move
+  workflow, or double-click one to request a direct move to its suit foundation.
+  Keyboard and accessibility-default activation remain immediate; stale card
+  identity or position fails closed and asks for another click.
 - A checked-in normal seed-zero draw-one/Standard replay reconstructs to one
   foundation move before victory. A bounded display-independent lifecycle gate
   starts a fresh Controller, exercises the final tableau/foundation route,
