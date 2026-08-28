@@ -1269,6 +1269,41 @@ fn tripeaks_complete_deal_candidate_is_pinned_without_overclaim() {
     assert!(ui.contains("accessible-live-region: polite"));
 }
 
+#[test]
+fn tripeaks_hostile_action_candidate_is_pinned_without_overclaim() {
+    let evidence = include_str!("../docs/TRIPEAKS_HOSTILE_ACTION_ACCEPTANCE.md");
+    let catalog = include_str!("../docs/offline-capabilities.json");
+    let engine = include_str!("../src/tripeaks.rs");
+
+    for contract in [
+        "dependency-free, renderer-independent",
+        "hostile_actions_are_exact_and_fully_atomic",
+        "fixed_seed_rule_action_space_preserves_tripeaks_invariants",
+        "every possible `Remove(u8)` value",
+        "structural equality and serialized bytes",
+        "change the TriPeaks capability from Partial",
+        "Exact-package rule selection",
+    ] {
+        assert!(
+            evidence.contains(contract),
+            "missing TriPeaks hostile-action boundary: {contract}"
+        );
+    }
+    for test in [
+        "hostile_actions_are_exact_and_fully_atomic",
+        "fixed_seed_rule_action_space_preserves_tripeaks_invariants",
+        "tripeaks_hostile_action_candidate_is_pinned_without_overclaim",
+    ] {
+        assert!(catalog.contains(test), "missing TriPeaks evidence: {test}");
+        assert!(engine.contains(test) || test.ends_with("without_overclaim"));
+    }
+    assert!(catalog.contains("docs/TRIPEAKS_HOSTILE_ACTION_ACCEPTANCE.md"));
+    assert!(catalog.contains(
+        "{\"id\":\"game.tripeaks\",\"title\":\"Playable TriPeaks\",\"status\":\"partial\""
+    ));
+    assert!(catalog.contains("exact installed final transition/process identity"));
+}
+
 fn assert_pyramid_restart_source_contract(controller: &str) {
     assert!(controller.contains("fn exercise_pyramid_restart_child"));
     assert!(controller.contains("pyramid_complete_deal_survives_normal_controller_restart"));

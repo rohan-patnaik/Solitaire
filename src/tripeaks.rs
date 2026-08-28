@@ -306,8 +306,223 @@ impl std::error::Error for MoveError {}
 mod tests {
     use super::*;
     use crate::cards::{Rank, Suit};
+    use std::collections::HashSet;
+
     fn card(rank: Rank) -> Card {
         Card::new(Suit::Clubs, rank)
+    }
+
+    fn assert_state_invariants(game: &Game) {
+        let cards = game
+            .state
+            .tableau
+            .iter()
+            .flatten()
+            .chain(&game.state.stock)
+            .chain(&game.state.waste)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(cards.len(), 52);
+        assert_eq!(cards.iter().copied().collect::<HashSet<_>>().len(), 52);
+        assert_eq!(
+            usize::try_from(game.state.moves).unwrap(),
+            game.actions.len()
+        );
+
+        for index in 0..TABLEAU_SIZE {
+            let expected = game.state.tableau[index].is_some()
+                && CHILDREN.get(index).is_none_or(|&(left, right)| {
+                    game.state.tableau[left].is_none() && game.state.tableau[right].is_none()
+                });
+            assert_eq!(game.state.is_exposed(index), expected, "tableau {index}");
+        }
+        assert!(!game.state.is_exposed(TABLEAU_SIZE));
+        assert!(!game.state.is_exposed(usize::MAX));
+    }
+
+    fn candidate_actions() -> impl Iterator<Item = Action> {
+        std::iter::once(Action::Draw).chain((u8::MIN..=u8::MAX).map(Action::Remove))
+    }
+
+    type HostileCase = (&'static str, Game, Action, MoveError);
+
+    fn hostile_action_cases() -> Vec<HostileCase> {
+        let base = Game::new(7, Options::default());
+        let non_adjacent = (18..TABLEAU_SIZE)
+            .find(|&index| {
+                !adjacent(
+                    *base.state.waste.last().unwrap(),
+                    base.state.tableau[index].unwrap(),
+                    false,
+                )
+            })
+            .unwrap();
+
+        let mut empty_stock = base.clone();
+        empty_stock.state.stock.clear();
+
+        let mut empty_waste = base.clone();
+        empty_waste.state.waste.clear();
+
+        let mut draw_overflow = base.clone();
+        draw_overflow.state.moves = u32::MAX;
+
+        let mut streak_overflow = base.clone();
+        streak_overflow.state.tableau = [None; TABLEAU_SIZE];
+        streak_overflow.state.tableau[18] = Some(card(Rank::Queen));
+        streak_overflow.state.waste = vec![card(Rank::Jack)];
+        streak_overflow.state.streak = u32::MAX;
+
+        let mut score_overflow = streak_overflow.clone();
+        score_overflow.state.streak = 0;
+        score_overflow.state.score = u32::MAX;
+
+        let mut move_overflow = streak_overflow.clone();
+        move_overflow.state.streak = 0;
+        move_overflow.state.moves = u32::MAX;
+
+        let mut replay_full = base.clone();
+        replay_full.actions = vec![Action::Draw; crate::replay::MAX_REPLAY_ACTIONS];
+
+        let mut complete = base.clone();
+        complete.state.tableau = [None; TABLEAU_SIZE];
+
+        vec![
+            (
+                "covered card",
+                base.clone(),
+                Action::Remove(0),
+                MoveError::CoveredCard,
+            ),
+            (
+                "first out-of-range index",
+                base.clone(),
+                Action::Remove(to_u8(TABLEAU_SIZE)),
+                MoveError::CoveredCard,
+            ),
+            (
+                "maximum hostile index",
+                base.clone(),
+                Action::Remove(u8::MAX),
+                MoveError::CoveredCard,
+            ),
+            (
+                "non-adjacent card",
+                base,
+                Action::Remove(to_u8(non_adjacent)),
+                MoveError::NotAdjacent,
+            ),
+            (
+                "empty stock",
+                empty_stock,
+                Action::Draw,
+                MoveError::EmptyStock,
+            ),
+            (
+                "empty waste",
+                empty_waste,
+                Action::Remove(18),
+                MoveError::EmptyWaste,
+            ),
+            (
+                "draw move overflow",
+                draw_overflow,
+                Action::Draw,
+                MoveError::CounterOverflow,
+            ),
+            (
+                "streak overflow",
+                streak_overflow,
+                Action::Remove(18),
+                MoveError::CounterOverflow,
+            ),
+            (
+                "score overflow",
+                score_overflow,
+                Action::Remove(18),
+                MoveError::CounterOverflow,
+            ),
+            (
+                "remove move overflow",
+                move_overflow,
+                Action::Remove(18),
+                MoveError::CounterOverflow,
+            ),
+            (
+                "replay capacity",
+                replay_full,
+                Action::Draw,
+                MoveError::ResourceLimit,
+            ),
+            (
+                "completed game",
+                complete,
+                Action::Draw,
+                MoveError::GameComplete,
+            ),
+        ]
+    }
+
+    #[test]
+    fn hostile_actions_are_exact_and_fully_atomic() {
+        for (name, mut game, action, expected) in hostile_action_cases() {
+            let before = game.clone();
+            let before_bytes = serde_json::to_vec(&before).unwrap();
+            assert_eq!(game.apply(action), Err(expected), "{name}");
+            assert_eq!(game, before, "{name}");
+            assert_eq!(serde_json::to_vec(&game).unwrap(), before_bytes, "{name}");
+        }
+    }
+
+    #[test]
+    fn fixed_seed_rule_action_space_preserves_tripeaks_invariants() {
+        let mut legal_draws = 0;
+        let mut legal_removals = 0;
+        let mut rejected_actions = 0;
+
+        for wraparound in [false, true] {
+            for seed in [0, 7, 41, u64::MAX] {
+                let mut game = Game::new(seed, Options { wraparound });
+                assert_state_invariants(&game);
+
+                for _ in 0..52 {
+                    for action in candidate_actions() {
+                        let before = game.clone();
+                        let mut probe = before.clone();
+                        if probe.apply(action).is_ok() {
+                            assert_state_invariants(&probe);
+                            assert_eq!(Game::from_replay(&probe.replay()).unwrap(), probe);
+
+                            let after = probe.clone();
+                            assert!(probe.undo());
+                            assert_eq!(probe.state, before.state);
+                            assert_eq!(probe.replay(), before.replay());
+                            assert!(probe.can_redo());
+                            assert!(probe.redo());
+                            assert_eq!(probe, after);
+
+                            match action {
+                                Action::Draw => legal_draws += 1,
+                                Action::Remove(_) => legal_removals += 1,
+                            }
+                        } else {
+                            rejected_actions += 1;
+                            assert_eq!(probe, before);
+                        }
+                    }
+
+                    let Some(action) = game.hint() else {
+                        break;
+                    };
+                    game.apply(action).unwrap();
+                    assert_state_invariants(&game);
+                }
+            }
+        }
+
+        assert!(legal_draws > 0);
+        assert!(legal_removals > 0);
+        assert!(rejected_actions > 0);
     }
 
     #[test]

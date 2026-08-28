@@ -118,6 +118,11 @@ keyboard and AT-SPI acceptance for this control remains open.
   waste, or activate the stock/waste control to draw. The original four-row
   layout exposes the active rule, deal, stock, waste, streak score, move count,
   hints, and win status without copying vendor presentation.
+- Dependency-free engine sweeps cover both rank rules across fixed boundary
+  seeds and every public `Remove(u8)` value. Legal actions must conserve 52
+  unique cards and round-trip through replay plus undo/redo; hostile, corrupt,
+  out-of-range, overflow, capacity, and completed-game requests are exact
+  byte-preserving rejections.
 - A checked-in normal seed-zero TriPeaks replay reconstructs to one legal move
   before victory. A bounded display-independent lifecycle gate starts a fresh
   Controller, exercises the final removal, score, atomic persistence and

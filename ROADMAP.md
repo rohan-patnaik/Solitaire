@@ -42,11 +42,14 @@ Functional parity is achievable for the five core games and common collection fe
 - TriPeaks has a playable Slint surface backed by its deterministic engine, with
   Standard and optional Ace-King wrap rules, numbered deals, undo/redo, hints,
   replay save/resume, bounded recovery, and declared keyboard/accessibility
-  semantics. A normal Standard seed-zero replay reaches a one-move near-win and
+  semantics. Dependency-free hostile-action and fixed seed/rule action-space
+  sweeps cover every public removal index, exact rejection atomicity, unique-card
+  conservation, exposure, replay, and undo/redo invariants. A normal Standard
+  seed-zero replay reaches a one-move near-win and
   a bounded subprocess gate persists its final transition, score, and one-time
   profile across undo/redo, process exit, and a second fresh Controller's byte-
   identical reopen. Exact-package final-action/process-identity and rule-
-  selection acceptance plus broader hostile/property evidence remain open, so
+  selection acceptance, drag/touch, and spoken-output evidence remain open, so
   the capability stays Partial.
 - Pyramid now has a playable original Slint surface backed by its deterministic engine, with sequential numbered deals, pair-to-13 and king removal, selectable zero-, one-, or two-redeal bounds, undo/redo, hints, replay save/resume, bounded recovery, identity-hidden covered cards, and declared keyboard/accessibility semantics. Focused headless evidence covers strict selection, exhaustion, hostile inputs, atomic dirty confirmation, save/reopen, undo/redo, and persisted custom bounds. A normal seed-zero replay reaches a one-pair near-win, and a bounded subprocess gate persists its final pair, score, and one-time profile across undo/redo, process exit, and a second fresh Controller's byte-identical reopen. Exact-package rule-selection/final-action acceptance and broader hostile/property evidence remain open, so the capability stays Partial.
 - A bounded anonymous device-local profile now records per-game deals played and won from proven controller lifecycle transitions. All five games have bounded two-Controller subprocess evidence for byte-identical won-game/profile reopen. Named profiles, achievements, streaks, import/export, sync, broader collection workflows, and release-quality work remain open.

@@ -135,6 +135,13 @@ installed final transition and process/window identity remain open under the
 desktop-safe input boundary. See
 [`TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md`](TRIPEAKS_COMPLETE_DEAL_ACCEPTANCE.md).
 
+Dependency-free engine sweeps cover both TriPeaks rank rules across fixed
+boundary seeds and every public removal index. They require exact hostile-action
+atomicity, 52 unique conserved cards, dependency-graph exposure, replay
+reconstruction, and undo/redo equivalence. This remains source evidence, not an
+installed input or assistive-technology gate. See
+[`TRIPEAKS_HOSTILE_ACTION_ACCEPTANCE.md`](TRIPEAKS_HOSTILE_ACTION_ACCEPTANCE.md).
+
 FreeCell now accepts an explicit decimal deal number across the full `u64`
 range as well as a separate next-deal action. Focused controller coverage
 rejects empty, signed, spaced, non-ASCII, overflowing, and oversized input
@@ -279,7 +286,7 @@ package files.
   Klondike, FreeCell, TriPeaks, and Pyramid complete-deal transcripts plus the
   normal one-suit Spider transcript now prove all five final controller
   lifecycles, but the installed win transitions,
-  remaining rule variants and installed selectors, broader hostile/property tests, drag/touch behavior,
+  remaining rule variants and installed selectors, broader hostile/property tests outside the bounded TriPeaks sweep, drag/touch behavior,
   solver-grade FreeCell hints, Pyramid solvability metadata, and installed
   TriPeaks rule selection remain incomplete or unverified.
 - The shared restart-current-deal control is automated source evidence only;
