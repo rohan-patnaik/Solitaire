@@ -14,10 +14,13 @@ field. Existing two-field new-deal requests remain compatible and mean
 unlimited redeals; the persisted replay schema is unchanged.
 While a dirty-state decision is pending, rendering leaves the selected future
 options intact instead of replacing them with the current deal's rules.
-`reopened_klondike_options_restore_combo_values_and_indices` renders a reopened
-draw-three/Vegas/three-redeal game into the headless Slint component and pins
-both displayed values and selection indices. It also proves the intentional
-index `-1` custom-limit state and retention of a pending one-redeal selection.
+`reopened_klondike_options_map_values_and_indices_without_a_display` pins the
+single renderer mapping used for reopened draw/scoring/redeal values and
+selection indices without requiring a display server. It covers the supported
+presets and the intentional index `-1` custom-limit state. A deployment
+contract pins the matching two-way `ComboBox.current-index` bindings. The
+mapping test also pins the guard that retains a pending future selection
+instead of syncing current-deal rules over it.
 
 The active surface reports redeals used and either the bounded remainder or
 that the deal is unlimited. A save with another valid `u8` limit is shown as a
@@ -40,6 +43,14 @@ also covers unsupported limits, trailing fields, and a 4 KiB hostile field.
 Those inputs preserve the current game, save bytes, deal counters, and pending
 request. Existing domain tests cover recycle order, counter overflow, replay,
 and validation of a redeal count that exceeds its declared maximum.
+
+The first exact-SHA CI attempt at `57b8dc6e223f0fdf9590ae7893c84253bfa168dc`
+failed only because its component assertion initialized Slint's Winit backend
+on a GitHub runner with no `WAYLAND_DISPLAY`, `WAYLAND_SOCKET`, or `DISPLAY`.
+Run `33128045066` still passed formatting, checksum, generated-catalog, Clippy,
+and all 118 domain tests; 40 of 41 controller tests passed. The mapping contract
+above is the display-independent remediation. No virtual display dependency was
+added and the failed run is not accepted as publication evidence.
 
 ## Remaining installed gate
 

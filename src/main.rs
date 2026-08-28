@@ -1799,45 +1799,55 @@ fn render_klondike(app: &AppWindow, controller: &Controller) {
 }
 
 fn render_klondike_options(app: &AppWindow, controller: &Controller) {
-    let options = controller.game.state.options;
-    if controller.pending_new_deal.is_none() {
-        app.set_klondike_draw_index(match options.draw_mode {
-            DrawMode::One => 0,
-            DrawMode::Three => 1,
-        });
-        app.set_klondike_draw_mode(
-            match options.draw_mode {
-                DrawMode::One => "Draw 1",
-                DrawMode::Three => "Draw 3",
-            }
-            .into(),
-        );
-        app.set_klondike_scoring_index(match options.scoring {
-            Scoring::Standard => 0,
-            Scoring::Vegas => 1,
-        });
-        app.set_klondike_scoring_mode(
-            match options.scoring {
-                Scoring::Standard => "Standard",
-                Scoring::Vegas => "Vegas",
-            }
-            .into(),
-        );
-        app.set_klondike_redeal_index(match options.max_redeals {
-            None => 0,
-            Some(1) => 1,
-            Some(3) => 2,
-            Some(_) => -1,
-        });
-        app.set_klondike_redeal_limit(
-            match options.max_redeals {
-                None => "Unlimited",
-                Some(1) => "1 redeal",
-                Some(3) => "3 redeals",
-                Some(_) => "Custom",
-            }
-            .into(),
-        );
+    if let Some(options) = klondike_ui_options_for_render(controller) {
+        app.set_klondike_draw_index(options.draw_index);
+        app.set_klondike_draw_mode(options.draw_mode.into());
+        app.set_klondike_scoring_index(options.scoring_index);
+        app.set_klondike_scoring_mode(options.scoring_mode.into());
+        app.set_klondike_redeal_index(options.redeal_index);
+        app.set_klondike_redeal_limit(options.redeal_limit.into());
+    }
+}
+
+fn klondike_ui_options_for_render(controller: &Controller) -> Option<KlondikeUiOptions> {
+    controller
+        .pending_new_deal
+        .is_none()
+        .then(|| klondike_ui_options(controller.game.state.options))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct KlondikeUiOptions {
+    draw_index: i32,
+    draw_mode: &'static str,
+    scoring_index: i32,
+    scoring_mode: &'static str,
+    redeal_index: i32,
+    redeal_limit: &'static str,
+}
+
+fn klondike_ui_options(options: Options) -> KlondikeUiOptions {
+    let (draw_index, draw_mode) = match options.draw_mode {
+        DrawMode::One => (0, "Draw 1"),
+        DrawMode::Three => (1, "Draw 3"),
+    };
+    let (scoring_index, scoring_mode) = match options.scoring {
+        Scoring::Standard => (0, "Standard"),
+        Scoring::Vegas => (1, "Vegas"),
+    };
+    let (redeal_index, redeal_limit) = match options.max_redeals {
+        None => (0, "Unlimited"),
+        Some(1) => (1, "1 redeal"),
+        Some(3) => (2, "3 redeals"),
+        Some(_) => (-1, "Custom"),
+    };
+    KlondikeUiOptions {
+        draw_index,
+        draw_mode,
+        scoring_index,
+        scoring_mode,
+        redeal_index,
+        redeal_limit,
     }
 }
 
@@ -3585,47 +3595,80 @@ mod tests {
     }
 
     #[test]
-    fn reopened_klondike_options_restore_combo_values_and_indices() {
-        let mut controller = controller(216);
-        controller.game = Game::new(
-            216,
-            Options {
+    fn reopened_klondike_options_map_values_and_indices_without_a_display() {
+        assert_eq!(
+            klondike_ui_options(Options {
+                draw_mode: DrawMode::One,
+                scoring: Scoring::Standard,
+                max_redeals: None,
+                timed: false,
+            }),
+            KlondikeUiOptions {
+                draw_index: 0,
+                draw_mode: "Draw 1",
+                scoring_index: 0,
+                scoring_mode: "Standard",
+                redeal_index: 0,
+                redeal_limit: "Unlimited",
+            }
+        );
+        assert_eq!(
+            klondike_ui_options(Options {
+                draw_mode: DrawMode::Three,
+                scoring: Scoring::Vegas,
+                max_redeals: Some(1),
+                timed: false,
+            }),
+            KlondikeUiOptions {
+                draw_index: 1,
+                draw_mode: "Draw 3",
+                scoring_index: 1,
+                scoring_mode: "Vegas",
+                redeal_index: 1,
+                redeal_limit: "1 redeal",
+            }
+        );
+        assert_eq!(
+            klondike_ui_options(Options {
                 draw_mode: DrawMode::Three,
                 scoring: Scoring::Vegas,
                 max_redeals: Some(3),
                 timed: false,
-            },
+            }),
+            KlondikeUiOptions {
+                draw_index: 1,
+                draw_mode: "Draw 3",
+                scoring_index: 1,
+                scoring_mode: "Vegas",
+                redeal_index: 2,
+                redeal_limit: "3 redeals",
+            }
         );
-        let app = AppWindow::new().unwrap();
-        render(&app, &controller);
-        assert_eq!(app.get_klondike_draw_mode(), "Draw 3");
-        assert_eq!(app.get_klondike_draw_index(), 1);
-        assert_eq!(app.get_klondike_scoring_mode(), "Vegas");
-        assert_eq!(app.get_klondike_scoring_index(), 1);
-        assert_eq!(app.get_klondike_redeal_limit(), "3 redeals");
-        assert_eq!(app.get_klondike_redeal_index(), 2);
+        assert_eq!(
+            klondike_ui_options(Options {
+                draw_mode: DrawMode::One,
+                scoring: Scoring::Standard,
+                max_redeals: Some(2),
+                timed: false,
+            }),
+            KlondikeUiOptions {
+                draw_index: 0,
+                draw_mode: "Draw 1",
+                scoring_index: 0,
+                scoring_mode: "Standard",
+                redeal_index: -1,
+                redeal_limit: "Custom",
+            }
+        );
 
-        controller.game.state.options.max_redeals = Some(2);
-        render(&app, &controller);
-        assert_eq!(app.get_klondike_redeal_limit(), "Custom");
-        assert_eq!(app.get_klondike_redeal_index(), -1);
-
-        app.set_klondike_draw_mode("Draw 1".into());
-        app.set_klondike_draw_index(0);
-        app.set_klondike_scoring_mode("Standard".into());
-        app.set_klondike_scoring_index(0);
-        app.set_klondike_redeal_limit("1 redeal".into());
-        app.set_klondike_redeal_index(1);
+        let mut controller = controller(216);
+        assert!(klondike_ui_options_for_render(&controller).is_some());
         controller.pending_new_deal =
             parse_klondike_variant("Draw 1 · Standard · 1 redeal").map(|variant| PendingNewDeal {
                 game: GameKind::Klondike,
                 variant,
             });
-        render(&app, &controller);
-        assert_eq!(app.get_klondike_draw_index(), 0);
-        assert_eq!(app.get_klondike_scoring_index(), 0);
-        assert_eq!(app.get_klondike_redeal_index(), 1);
-        assert_eq!(app.get_klondike_redeal_limit(), "1 redeal");
+        assert_eq!(klondike_ui_options_for_render(&controller), None);
     }
 
     #[test]

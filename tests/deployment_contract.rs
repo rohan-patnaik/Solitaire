@@ -319,10 +319,13 @@ fn klondike_redeal_limit_candidate_is_pinned_without_overclaim() {
         "Unlimited`, `1 redeal`, and `3 redeals",
         "persisted replay schema is unchanged",
         "klondike_redeal_limits_are_atomic_reopenable_and_enforced",
-        "reopened_klondike_options_restore_combo_values_and_indices",
+        "reopened_klondike_options_map_values_and_indices_without_a_display",
         "No redeals remain",
         "exact in-memory game and on-disk bytes",
         "4 KiB hostile field",
+        "57b8dc6e223f0fdf9590ae7893c84253bfa168dc",
+        "33128045066",
+        "failed run is not accepted as publication evidence",
         "continuously preserve the active desktop",
         "rows Partial",
     ] {
@@ -332,12 +335,15 @@ fn klondike_redeal_limit_candidate_is_pinned_without_overclaim() {
         );
     }
     assert!(catalog.contains("klondike_redeal_limits_are_atomic_reopenable_and_enforced"));
-    assert!(catalog.contains("reopened_klondike_options_restore_combo_values_and_indices"));
+    assert!(catalog.contains("reopened_klondike_options_map_values_and_indices_without_a_display"));
     assert!(catalog.contains("The Vegas and redeal-limit UI workflows"));
     assert!(controller.contains("Some(\"1 redeal\") => Some(1)"));
     assert!(controller.contains("Some(\"3 redeals\") => Some(3)"));
-    assert!(controller.contains("if controller.pending_new_deal.is_none()"));
+    assert!(controller.contains("fn klondike_ui_options_for_render"));
     assert!(ui.contains("model: [\"Unlimited\", \"1 redeal\", \"3 redeals\"]"));
+    assert!(ui.contains("current-index <=> root.klondike-draw-index"));
+    assert!(ui.contains("current-index <=> root.klondike-scoring-index"));
+    assert!(ui.contains("current-index <=> root.klondike-redeal-index"));
     assert!(ui.contains("accessible-label: \"Stock redeal limit for a new Klondike deal\""));
     assert!(ui.contains("root.redeals-remaining < 0 ? \" / unlimited\""));
 }
