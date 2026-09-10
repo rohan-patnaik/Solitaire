@@ -346,6 +346,35 @@ mod tests {
 
     type HostileCase = (&'static str, Game, Action, MoveError);
 
+    fn base_hostile_action_cases(base: &Game, non_adjacent: usize) -> Vec<HostileCase> {
+        vec![
+            (
+                "covered card",
+                base.clone(),
+                Action::Remove(0),
+                MoveError::CoveredCard,
+            ),
+            (
+                "first out-of-range index",
+                base.clone(),
+                Action::Remove(to_u8(TABLEAU_SIZE)),
+                MoveError::CoveredCard,
+            ),
+            (
+                "maximum hostile index",
+                base.clone(),
+                Action::Remove(u8::MAX),
+                MoveError::CoveredCard,
+            ),
+            (
+                "non-adjacent card",
+                base.clone(),
+                Action::Remove(to_u8(non_adjacent)),
+                MoveError::NotAdjacent,
+            ),
+        ]
+    }
+
     fn hostile_action_cases() -> Vec<HostileCase> {
         let base = Game::new(7, Options::default());
         let non_adjacent = (18..TABLEAU_SIZE)
@@ -387,31 +416,8 @@ mod tests {
         let mut complete = base.clone();
         complete.state.tableau = [None; TABLEAU_SIZE];
 
-        vec![
-            (
-                "covered card",
-                base.clone(),
-                Action::Remove(0),
-                MoveError::CoveredCard,
-            ),
-            (
-                "first out-of-range index",
-                base.clone(),
-                Action::Remove(to_u8(TABLEAU_SIZE)),
-                MoveError::CoveredCard,
-            ),
-            (
-                "maximum hostile index",
-                base.clone(),
-                Action::Remove(u8::MAX),
-                MoveError::CoveredCard,
-            ),
-            (
-                "non-adjacent card",
-                base,
-                Action::Remove(to_u8(non_adjacent)),
-                MoveError::NotAdjacent,
-            ),
+        let mut cases = base_hostile_action_cases(&base, non_adjacent);
+        cases.extend([
             (
                 "empty stock",
                 empty_stock,
@@ -460,7 +466,8 @@ mod tests {
                 Action::Draw,
                 MoveError::GameComplete,
             ),
-        ]
+        ]);
+        cases
     }
 
     #[test]
