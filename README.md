@@ -2,6 +2,22 @@
 
 An offline, ad-free alpha of five classic patience games for Omarchy Quattro: Klondike, Spider, FreeCell, Pyramid, and TriPeaks.
 
+## At a glance
+
+- Five playable games: Klondike, Spider, FreeCell, Pyramid, and TriPeaks.
+- Fully offline and ad-free, with device-local saves, replay-backed undo/redo, deterministic hints, and local statistics.
+- Original presentation and public-domain game mechanics—no copied Microsoft art, audio, layouts, or game assets.
+- This is an alpha: the native desktop game is playable, while final packaging and broader acceptance work continue.
+
+## Install on Omarchy
+
+Follow the [alpha installation guide](docs/ALPHA_RELEASE.md#install-the-exact-accepted-arch-package) to build and install the exact Arch package. Then add and launch the Omarchy plugin:
+
+```sh
+omarchy plugin add https://github.com/rohan-patnaik/Solitaire.git --enable --yes
+omarchy-shell shell summon io.github.rohan-patnaik.solitaire '{}'
+```
+
 This project implements public-domain game mechanics with its own code and original visual/audio presentation. It does not copy Microsoft card faces, card backs, backgrounds, animations, sounds, wording, screenshots, or layout.
 
 The repository contains:
@@ -141,8 +157,7 @@ omarchy plugin remove io.github.rohan-patnaik.solitaire
 sudo pacman -Rns solitaire-omarchy
 ```
 
-The root `preview.png` is the original monochrome marketplace mark for this
-plugin listing.
+The root `preview.png` is the marketplace cover for this plugin listing.
 
 ## License
 

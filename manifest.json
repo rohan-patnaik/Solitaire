@@ -5,10 +5,9 @@
   "version": "0.1.0",
   "author": "Rohan Patnaik",
   "license": "MIT",
-  "description": "Launch an original offline collection of five classic patience games from Omarchy Quattro.",
+  "description": "Play five offline patience games—Klondike, Spider, FreeCell, Pyramid, and TriPeaks—with undo, hints, and local saved progress.",
   "kinds": ["menu"],
   "entryPoints": {
     "menu": "Plugin.qml"
   }
 }
-
